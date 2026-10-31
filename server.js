@@ -5,12 +5,13 @@ import mongoose from 'mongoose'
 import productRoutes from './routes/productRoutes.js'
 import userRoutes from './routes/userRoutes.js'
 import orderRoutes from './routes/orderRoutes.js'
-import paymentRoutes from './routes/paymentRoutes.js'   
-import uploadRoutes from './routes/uploadRoutes.js'      
+import paymentRoutes from './routes/paymentRoutes.js'
+import uploadRoutes from './routes/uploadRoutes.js'
 import categoryRoutes from './routes/categoryRoutes.js'
-import { startOrderExpiryJob } from './utils/expireOrders.js'                                                                                                                        
-// ...
-
+import logoRoutes from './routes/logoRoutes.js'
+import heroRoutes from './routes/heroRoutes.js'
+import settingsRoutes from './routes/settingsRoutes.js'
+import { startOrderExpiryJob } from './utils/expireOrders.js'
 
 dotenv.config()
 
@@ -25,6 +26,9 @@ app.use('/api/orders', orderRoutes)
 app.use('/api/payments', paymentRoutes)
 app.use('/api/upload', uploadRoutes)
 app.use('/api/categories', categoryRoutes)
+app.use('/api/logos', logoRoutes)
+app.use('/api/hero', heroRoutes)
+app.use('/api/settings', settingsRoutes)
 
 app.get('/', (req, res) => {
   res.send('Abuja Store API is running')
@@ -37,6 +41,7 @@ mongoose
     startOrderExpiryJob()
   })
   .catch((err) => console.error('MongoDB connection error:', err))
+
 const PORT = process.env.PORT || 5000
 
 app.listen(PORT, () => {

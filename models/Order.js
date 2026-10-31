@@ -50,6 +50,10 @@ const orderSchema = new mongoose.Schema(
       pickupType: String, // e.g. 'Store Pickup'
       location: String, // e.g. 'Main Retail Store Branch'
     },
+    // Breakdown saved at checkout. Older orders won't have these.
+    subtotal: { type: Number, default: 0 },
+    shippingCost: { type: Number, default: 0 },
+    taxAmount: { type: Number, default: 0 },
     totalPrice: { type: Number, required: true },
     paymentReference: String,
     isPaid: { type: Boolean, default: false },

@@ -4,6 +4,7 @@ import Product from '../models/Product.js'
 import { restoreStock } from '../utils/stock.js'
 import { sendStatusUpdate } from '../utils/email.js'
 import { HOLD_MINUTES } from '../utils/expireOrders.js'
+import { getStoreSettings } from './settingsController.js'
 
 const STATUSES = ['pending', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']
 const NOTIFY = ['processing', 'shipped', 'delivered', 'cancelled']
@@ -25,6 +26,15 @@ export const createOrder = async (req, res) => {
 
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: 'Your cart is empty' })
+    }
+
+    // Shipping, tax and pickup rules come from the store settings,
+    // never from the browser, so the customer is charged what the store decided.
+    const settings = await getStoreSettings()
+    const method = deliveryMethod === 'pickup' ? 'pickup' : 'ship'
+
+    if (method === 'pickup' && !settings.pickup.enabled) {
+      return res.status(400).json({ message: 'Store pickup is not available right now' })
     }
 
     const orderItems = []
@@ -60,14 +70,37 @@ export const createOrder = async (req, res) => {
       })
     }
 
-    const totalPrice = orderItems.reduce((sum, i) => sum + i.price * i.quantity, 0)
+    const subtotal = orderItems.reduce((sum, i) => sum + i.price * i.quantity, 0)
+
+    let shippingCost = 0
+    if (method === 'ship') {
+      const threshold = settings.shipping.freeShippingThreshold
+      const qualifiesForFree = threshold > 0 && subtotal >= threshold
+      shippingCost = qualifiesForFree ? 0 : settings.shipping.flatRate
+    }
+
+    const taxAmount = Math.round((subtotal * settings.tax.rate) / 100)
+    const totalPrice = subtotal + shippingCost + taxAmount
+
+    // For pickup, the location is the store's own, not whatever the browser sent
+    const address =
+      method === 'pickup'
+        ? {
+            pickupType: 'Store Pickup',
+            location: settings.pickup.name,
+            phone: shippingAddress?.phone,
+          }
+        : shippingAddress
 
     const order = await Order.create({
       orderNumber: await nextOrderNumber(),
       user: req.user._id,
       items: orderItems,
-      deliveryMethod,
-      shippingAddress,
+      deliveryMethod: method,
+      shippingAddress: address,
+      subtotal,
+      shippingCost,
+      taxAmount,
       totalPrice,
       statusHistory: [{ status: 'pending', note: 'Order placed', at: new Date() }],
       expiresAt: new Date(Date.now() + HOLD_MINUTES * 60 * 1000),
