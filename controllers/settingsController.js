@@ -10,10 +10,28 @@ const SECTION_FIELDS = {
   tax: ['rate', 'label'],
   pickup: ['enabled', 'name', 'address', 'readyTime'],
   announcement: ['enabled', 'text', 'link'],
+  homeArrivals: ['enabled', 'title', 'subtitle', 'count'],
+  homeBestSellers: ['enabled', 'label', 'title'],
+  homeBanner: ['enabled', 'image', 'heading', 'text', 'buttonLabel', 'buttonLink'],
+  homeCategoryRow: ['enabled', 'title', 'category'],
+  homeFeatured: ['enabled', 'title', 'image', 'buttonLabel', 'buttonLink', 'category'],
 }
 
-const NUMBER_FIELDS = new Set(['shipping.flatRate', 'shipping.freeShippingThreshold', 'tax.rate'])
-const BOOLEAN_FIELDS = new Set(['pickup.enabled', 'announcement.enabled'])
+const NUMBER_FIELDS = new Set([
+  'shipping.flatRate',
+  'shipping.freeShippingThreshold',
+  'tax.rate',
+  'homeArrivals.count',
+])
+const BOOLEAN_FIELDS = new Set([
+  'pickup.enabled',
+  'announcement.enabled',
+  'homeArrivals.enabled',
+  'homeBestSellers.enabled',
+  'homeBanner.enabled',
+  'homeCategoryRow.enabled',
+  'homeFeatured.enabled',
+])
 
 // Always returns the one settings document, creating it with defaults the first time.
 // Used by the order controller so shipping and tax are decided on the server.
@@ -61,6 +79,14 @@ export const updateSettings = async (req, res) => {
           }
           if (path === 'tax.rate' && value > 100) {
             return res.status(400).json({ message: 'Tax rate cannot be more than 100%' })
+          }
+          if (path === 'homeArrivals.count') {
+            value = Math.round(value)
+            if (value < 1 || value > 24) {
+              return res
+                .status(400)
+                .json({ message: 'Number of new arrivals must be between 1 and 24' })
+            }
           }
         } else if (BOOLEAN_FIELDS.has(path)) {
           value = Boolean(value)

@@ -45,6 +45,40 @@ const settingsSchema = new mongoose.Schema(
       readyTime: str('Usually ready in 2 to 4 hours'),
     },
 
+    // Homepage sections (Admin → Homepage)
+    homeArrivals: {
+      enabled: { type: Boolean, default: true },
+      title: str('New Arrivals'),
+      subtitle: str('Explore the newest drops'),
+      count: { type: Number, default: 8, min: 1, max: 24 },
+    },
+    homeBestSellers: {
+      enabled: { type: Boolean, default: true },
+      label: str('Trending'),
+      title: str('Best Seller'),
+    },
+    homeBanner: {
+      enabled: { type: Boolean, default: true },
+      image: str(), // empty = use the built-in banner picture
+      heading: str('New Season, New Style'),
+      text: str('Check out our latest collection before it sells out'),
+      buttonLabel: str('Shop Now'),
+      buttonLink: str('/shop'),
+    },
+    homeCategoryRow: {
+      enabled: { type: Boolean, default: true },
+      title: str('Best Shoes'),
+      category: str('shoes'), // category slug whose products fill the row
+    },
+    homeFeatured: {
+      enabled: { type: Boolean, default: true },
+      title: str('ZERO TO THE WORLD'),
+      image: str(), // empty = use the built-in picture
+      buttonLabel: str('VIEW'),
+      buttonLink: str('/shop'),
+      category: str(), // empty = newest products
+    },
+
     announcement: {
       enabled: { type: Boolean, default: false },
       text: str(),
