@@ -5,6 +5,7 @@ import { restoreStock } from '../utils/stock.js'
 import { sendStatusUpdate } from '../utils/email.js'
 import { HOLD_MINUTES } from '../utils/expireOrders.js'
 import { getStoreSettings } from './settingsController.js'
+import { applyDiscount } from '../utils/discounts.js'
 
 const STATUSES = ['pending', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']
 const NOTIFY = ['processing', 'shipped', 'delivered', 'cancelled']
@@ -14,7 +15,7 @@ async function nextOrderNumber() {
   const counter = await Counter.findOneAndUpdate(
     { _id: 'order' },
     { $inc: { seq: 1 } },
-    { new: true, upsert: true }
+    { returnDocument: 'after', upsert: true }
   )
   return `${process.env.ORDER_PREFIX || 'ZR'}-${10000 + counter.seq}`
 }
@@ -52,7 +53,7 @@ export const createOrder = async (req, res) => {
           sizes: { $elemMatch: { size: item.size, stock: { $gte: quantity } } },
         },
         { $inc: { 'sizes.$.stock': -quantity } },
-        { new: true }
+        { returnDocument: 'after' }
       )
 
       if (!product) {
@@ -79,8 +80,18 @@ export const createOrder = async (req, res) => {
       shippingCost = qualifiesForFree ? 0 : settings.shipping.flatRate
     }
 
-    const taxAmount = Math.round((subtotal * settings.tax.rate) / 100)
-    const totalPrice = subtotal + shippingCost + taxAmount
+    // Optional discount code. Checked again here on the server, whatever the
+    // browser showed. Tax is worked out on the price after the discount.
+    let discountCode = ''
+    let discountAmount = 0
+    if (req.body.discountCode) {
+      const result = await applyDiscount(req.body.discountCode, subtotal, req.user._id)
+      discountCode = result.discount.code
+      discountAmount = result.amount
+    }
+
+    const taxAmount = Math.round(((subtotal - discountAmount) * settings.tax.rate) / 100)
+    const totalPrice = subtotal - discountAmount + shippingCost + taxAmount
 
     // For pickup, the location is the store's own, not whatever the browser sent
     const address =
@@ -101,6 +112,8 @@ export const createOrder = async (req, res) => {
       subtotal,
       shippingCost,
       taxAmount,
+      discountCode,
+      discountAmount,
       totalPrice,
       statusHistory: [{ status: 'pending', note: 'Order placed', at: new Date() }],
       expiresAt: new Date(Date.now() + HOLD_MINUTES * 60 * 1000),
@@ -211,7 +224,7 @@ export const cancelMyOrder = async (req, res) => {
         $set: { status: 'cancelled' },
         $push: { statusHistory: { status: 'cancelled', note: 'Cancelled by customer', at: new Date() } },
       },
-      { new: true }
+      { returnDocument: 'after' }
     )
 
     if (!order) {

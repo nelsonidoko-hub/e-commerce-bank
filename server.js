@@ -11,6 +11,8 @@ import categoryRoutes from './routes/categoryRoutes.js'
 import logoRoutes from './routes/logoRoutes.js'
 import heroRoutes from './routes/heroRoutes.js'
 import settingsRoutes from './routes/settingsRoutes.js'
+import discountRoutes from './routes/discountRoutes.js'
+import pageRoutes from './routes/pageRoutes.js'
 import { startOrderExpiryJob } from './utils/expireOrders.js'
 
 dotenv.config()
@@ -29,6 +31,8 @@ app.use('/api/categories', categoryRoutes)
 app.use('/api/logos', logoRoutes)
 app.use('/api/hero', heroRoutes)
 app.use('/api/settings', settingsRoutes)
+app.use('/api/discounts', discountRoutes)
+app.use('/api/pages', pageRoutes)
 
 app.get('/', (req, res) => {
   res.send('Abuja Store API is running')

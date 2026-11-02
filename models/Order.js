@@ -54,6 +54,9 @@ const orderSchema = new mongoose.Schema(
     subtotal: { type: Number, default: 0 },
     shippingCost: { type: Number, default: 0 },
     taxAmount: { type: Number, default: 0 },
+    // Discount code used on this order, if any (indexed so usage counts are fast)
+    discountCode: { type: String, default: '', index: true },
+    discountAmount: { type: Number, default: 0 },
     totalPrice: { type: Number, required: true },
     paymentReference: String,
     isPaid: { type: Boolean, default: false },
