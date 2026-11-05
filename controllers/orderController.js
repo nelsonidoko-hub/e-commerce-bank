@@ -2,7 +2,7 @@ import Order from '../models/Order.js'
 import Counter from '../models/Counter.js'
 import Product from '../models/Product.js'
 import { restoreStock } from '../utils/stock.js'
-import { sendStatusUpdate } from '../utils/email.js'
+import { sendStatusUpdate, sendPickupReady } from '../utils/email.js'
 import { HOLD_MINUTES } from '../utils/expireOrders.js'
 import { getStoreSettings } from './settingsController.js'
 import { applyDiscount } from '../utils/discounts.js'
@@ -188,8 +188,18 @@ export const updateOrderStatus = async (req, res) => {
       return res.status(400).json({ message: 'This order has not been paid yet' })
     }
 
+    const wasReady = Boolean(order.tracking?.readyForPickupAt)
+
     if (tracking) {
-      for (const key of ['courier', 'trackingNumber', 'trackingUrl', 'riderPhone', 'estimatedDelivery']) {
+      for (const key of [
+        'courier',
+        'trackingNumber',
+        'trackingUrl',
+        'riderPhone',
+        'estimatedDelivery',
+        'readyForPickupAt',
+        'pickupNote',
+      ]) {
         if (tracking[key] !== undefined) order.tracking[key] = tracking[key] || undefined
       }
     }
@@ -207,6 +217,15 @@ export const updateOrderStatus = async (req, res) => {
 
     if (changed && NOTIFY.includes(status)) {
       sendStatusUpdate(order).catch((e) => console.error('Status email error:', e.message))
+    }
+
+    // Marking a paid pickup order ready tells the customer. If the status was
+    // also set to "shipped" in the same save, that email already says the same
+    // thing, so don't send it twice.
+    const nowReady = Boolean(order.tracking?.readyForPickupAt)
+    const statusEmailCoversIt = changed && status === 'shipped'
+    if (order.deliveryMethod === 'pickup' && order.isPaid && !wasReady && nowReady && !statusEmailCoversIt) {
+      sendPickupReady(order).catch((e) => console.error('Pickup email error:', e.message))
     }
 
     res.json(order)

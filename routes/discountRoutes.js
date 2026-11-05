@@ -7,11 +7,12 @@ import {
   validateDiscountCode,
 } from '../controllers/discountController.js'
 import { protect, admin } from '../middleware/authMiddleware.js'
+import { discountCheckLimiter } from '../middleware/rateLimiters.js'
 
 const router = express.Router()
 
 // Any logged-in customer can check a code at checkout
-router.post('/validate', protect, validateDiscountCode)
+router.post('/validate', protect, discountCheckLimiter, validateDiscountCode)
 
 // Admin only
 router.get('/', protect, admin, getDiscounts)

@@ -26,6 +26,9 @@ const userSchema = new mongoose.Schema(
     },
     resetToken: String,
     resetTokenExpires: Date,
+    // Set whenever the password changes. Login tokens issued before this
+    // moment stop working, so a reset signs out anyone who had the old password.
+    passwordChangedAt: Date,
   },
   { timestamps: true }
 )
@@ -37,6 +40,11 @@ userSchema.pre('save', async function () {
 
   const salt = await bcrypt.genSalt(10)
   this.password = await bcrypt.hash(this.password, salt)
+
+  // A brand-new account has no earlier tokens to cancel
+  if (!this.isNew) {
+    this.passwordChangedAt = new Date()
+  }
 })
 
 userSchema.methods.matchPassword = async function (enteredPassword) {

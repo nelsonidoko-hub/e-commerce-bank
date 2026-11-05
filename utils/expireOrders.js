@@ -31,7 +31,7 @@ export async function expireUnpaidOrders() {
           statusHistory: { status: 'cancelled', note: 'Payment not received in time', at: new Date() },
         },
       },
-      { new: true }
+      { returnDocument: 'after' }
     )
     if (order) await restoreStock(order.items)
   }

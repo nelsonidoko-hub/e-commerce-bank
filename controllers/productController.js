@@ -1,5 +1,6 @@
 import Product from '../models/Product.js'
 import Category from '../models/Category.js'
+import { escapeRegex } from '../utils/validate.js'
 
 export const getProducts = async (req, res) => {
   try {
@@ -42,7 +43,7 @@ export const getProductsByCategory = async (req, res) => {
     // Case-insensitive exact match, tolerant of hyphen vs space
     // (e.g. "school-bags" vs "school bags").
     const orConditions = namesToMatch.map((name) => {
-      const normalized = name.replace(/-/g, ' ')
+      const normalized = escapeRegex(name.replace(/-/g, ' '))
       return { category: { $regex: `^${normalized}$`, $options: 'i' } }
     })
 
@@ -107,17 +108,21 @@ export const deleteProduct = async (req, res) => {
 
 export const searchProducts = async (req, res) => {
   try {
-    const { q } = req.query
+    // Only plain text is accepted (a repeated ?q= would arrive as a list), and
+    // it is escaped so it can never act as a regular expression.
+    const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100) : ''
 
     if (!q) {
       return res.json([])
     }
 
+    const pattern = escapeRegex(q)
+
     const products = await Product.find({
       $or: [
-        { name: { $regex: q, $options: 'i' } },
-        { description: { $regex: q, $options: 'i' } },
-        { category: { $regex: q, $options: 'i' } },
+        { name: { $regex: pattern, $options: 'i' } },
+        { description: { $regex: pattern, $options: 'i' } },
+        { category: { $regex: pattern, $options: 'i' } },
       ],
     })
 
