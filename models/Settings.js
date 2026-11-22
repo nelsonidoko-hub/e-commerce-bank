@@ -2,6 +2,16 @@ import mongoose from 'mongoose'
 
 const str = (def = '') => ({ type: String, default: def, trim: true })
 
+// monOpen, monClose, monClosed ... for each day of the week
+const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+const dayFields = Object.fromEntries(
+  DAYS.flatMap((day) => [
+    [`${day}Open`, str('09:00')],
+    [`${day}Close`, str('21:00')],
+    [`${day}Closed`, { type: Boolean, default: false }],
+  ])
+)
+
 const settingsSchema = new mongoose.Schema(
   {
     // Fixed key so there is only ever one settings document
@@ -43,6 +53,24 @@ const settingsSchema = new mongoose.Schema(
       name: str('Main Retail Store'),
       address: str(),
       readyTime: str('Usually ready in 2 to 4 hours'),
+    },
+
+    // Opening hours (Admin → Settings). Off by default.
+    //   whenClosed: 'block' = no orders while closed, 'preorder' = orders allowed and flagged
+    hours: {
+      enabled: { type: Boolean, default: false },
+      timezone: str('Africa/Lagos'),
+      whenClosed: str('block'),
+      ...dayFields,
+    },
+
+    // Storefront look (Admin → Themes). An empty override means "use the template's own".
+    theme: {
+      template: str('classic'),
+      brandColor: str(),
+      headingFont: str(),
+      bodyFont: str(),
+      radius: str(),
     },
 
     // Homepage sections (Admin → Homepage)
