@@ -27,6 +27,7 @@ Object.assign(process.env, {
   TRIAL_DAYS: '7',
   GRACE_DAYS: '7',
   RESEND_API_KEY: 'test',
+  BREVO_API_KEY: '',
   PLATFORM_NAME: 'Shopsy',
 })
 delete process.env.PLATFORM_PAYSTACK_SECRET_KEY

@@ -22,6 +22,7 @@ Object.assign(process.env, {
   PLAN_BASIC_PRICE: '5000',
   PLAN_PRO_PRICE: '12000',
   RESEND_API_KEY: 'test',
+  BREVO_API_KEY: '',
   VERCEL_TOKEN: 'vercel-test-token',
   VERCEL_PROJECT_ID: 'prj_test',
 })

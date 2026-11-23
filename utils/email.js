@@ -38,19 +38,48 @@ async function loadStore(ref) {
 
 // Emails go out from the platform's address (EMAIL_FROM) but show the shop's
 // name, and customers' replies go to the shop, not to the platform.
-function fromLine(storeName) {
+//
+// Which service sends them (Render settings):
+//   BREVO_API_KEY    use Brevo. EMAIL_FROM must be a sender you verified in
+//                    Brevo (Senders, Domains & Dedicated IPs -> Senders), e.g.
+//                    a Gmail address, until you have your own domain.
+//   RESEND_API_KEY   use Resend (needs a verified domain to email customers).
+// If both are set, Brevo is used. If neither, emails are only logged.
+function sender(storeName) {
   const configured = process.env.EMAIL_FROM || ''
-  const address = configured.match(/<([^>]+)>/)?.[1] || configured || 'onboarding@resend.dev'
+  const email = (configured.match(/<([^>]+)>/)?.[1] || configured).trim()
   const name = String(storeName || 'Your shop').replace(/["<>\r\n]/g, '').slice(0, 60)
-  return `"${name}" <${address}>`
+  return { name, email }
 }
 
-async function sendEmail({ to, subject, html, storeName, replyTo }) {
-  if (!to) return
-  if (!process.env.RESEND_API_KEY) {
-    console.log(`[email skipped - no RESEND_API_KEY] ${subject} -> ${to}`)
+function fromLine(storeName) {
+  const { name, email } = sender(storeName)
+  return `"${name}" <${email || 'onboarding@resend.dev'}>`
+}
+
+let warnedNoSender = false
+async function sendWithBrevo({ to, subject, html, storeName, replyTo }) {
+  const from = sender(storeName)
+  if (!from.email) {
+    if (!warnedNoSender) console.error('Email: BREVO_API_KEY is set but EMAIL_FROM is empty. Set it to a sender verified in Brevo.')
+    warnedNoSender = true
     return
   }
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: { 'api-key': process.env.BREVO_API_KEY, 'Content-Type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({
+      sender: from,
+      to: [to].flat().filter(Boolean).map((email) => ({ email })),
+      ...(replyTo ? { replyTo: { email: replyTo } } : {}),
+      subject,
+      htmlContent: html,
+    }),
+  })
+  if (!res.ok) console.error('Email failed (Brevo):', res.status, await res.text())
+}
+
+async function sendWithResend({ to, subject, html, storeName, replyTo }) {
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -65,7 +94,14 @@ async function sendEmail({ to, subject, html, storeName, replyTo }) {
       html,
     }),
   })
-  if (!res.ok) console.error('Email failed:', res.status, await res.text())
+  if (!res.ok) console.error('Email failed (Resend):', res.status, await res.text())
+}
+
+async function sendEmail(message) {
+  if (!message.to) return
+  if (process.env.BREVO_API_KEY) return sendWithBrevo(message)
+  if (process.env.RESEND_API_KEY) return sendWithResend(message)
+  console.log(`[email skipped - no BREVO_API_KEY or RESEND_API_KEY] ${message.subject} -> ${message.to}`)
 }
 
 function layout(heading, body, storeName) {

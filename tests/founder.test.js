@@ -22,6 +22,7 @@ Object.assign(process.env, {
   PLAN_BASIC_PRICE: '5000',
   PLAN_PRO_PRICE: '12000',
   RESEND_API_KEY: 'test',
+  BREVO_API_KEY: '',
   VERCEL_TOKEN: 'vercel-test-token',
   VERCEL_PROJECT_ID: 'prj_test',
 })
@@ -58,7 +59,7 @@ if (FAKE) {
   process.env.VERCEL_API_URL = `http://127.0.0.1:${server.address().port}`
 }
 const emails = []
-globalThis.fetch = async (url, opts) => (emails.push(JSON.parse(opts.body)), { ok: true, text: async () => '' })
+globalThis.fetch = async (url, opts) => (emails.push({ ...JSON.parse(opts.body), _url: url, _headers: opts.headers }), { ok: true, text: async () => '' })
 
 const Store = (await imp('models/Store.js')).default
 const User = (await imp('models/User.js')).default
@@ -333,6 +334,29 @@ await check("same answer for unknown emails; shop customers aren't platform acco
   await new Promise((resolve) => setTimeout(resolve, 20))
   assert.equal(a.body.message, b.body.message)
   assert.equal(emails.length, 0)
+})
+
+await check('with BREVO_API_KEY set, emails go through Brevo from the verified sender', async () => {
+  Object.assign(process.env, { BREVO_API_KEY: 'brevo-test', EMAIL_FROM: 'ShopBuilder <myshopbuilder@gmail.com>' })
+  try {
+    emails.length = 0
+    await run([PL.forgotPassword], { body: { email: 'bola@x.ng' } }, false)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const e = emails[0]
+    assert.equal(e._url, 'https://api.brevo.com/v3/smtp/email')
+    assert.equal(e._headers['api-key'], 'brevo-test')
+    assert.equal(e.sender.email, 'myshopbuilder@gmail.com')
+    assert.deepEqual(e.to, [{ email: 'bola@x.ng' }])
+    assert.match(e.htmlContent, /reset-password\//)
+    // no sender set: nothing is sent (and it says why in the logs)
+    emails.length = 0
+    process.env.EMAIL_FROM = ''
+    await run([PL.forgotPassword], { body: { email: 'bola@x.ng' } }, false)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(emails.length, 0)
+  } finally {
+    Object.assign(process.env, { BREVO_API_KEY: '', EMAIL_FROM: '' })
+  }
 })
 
 // ---------- terms ----------
