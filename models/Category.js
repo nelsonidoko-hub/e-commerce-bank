@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { tenantPlugin } from '../utils/tenant.js'
 
 const categorySchema = new mongoose.Schema(
   {
@@ -7,10 +8,8 @@ const categorySchema = new mongoose.Schema(
     name: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
       lowercase: true,
-      index: true,
     },
     // Human-readable display name, e.g. "Sunglasses"
     label: {
@@ -30,6 +29,10 @@ const categorySchema = new mongoose.Schema(
   },
   { timestamps: true }
 )
+
+// Belongs to one shop, and every query must say which (see utils/tenant.js)
+categorySchema.plugin(tenantPlugin)
+categorySchema.index({ store: 1, name: 1 }, { unique: true })
 
 const Category = mongoose.model('Category', categorySchema)
 export default Category

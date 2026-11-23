@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { tenantPlugin } from '../utils/tenant.js'
 
 const discountSchema = new mongoose.Schema(
   {
@@ -6,7 +7,6 @@ const discountSchema = new mongoose.Schema(
     code: {
       type: String,
       required: true,
-      unique: true,
       uppercase: true,
       trim: true,
     },
@@ -39,6 +39,10 @@ const discountSchema = new mongoose.Schema(
   },
   { timestamps: true }
 )
+
+// Belongs to one shop, and every query must say which (see utils/tenant.js)
+discountSchema.plugin(tenantPlugin)
+discountSchema.index({ store: 1, code: 1 }, { unique: true })
 
 const Discount = mongoose.model('Discount', discountSchema)
 export default Discount

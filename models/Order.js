@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { tenantPlugin } from '../utils/tenant.js'
 
 const statusHistorySchema = new mongoose.Schema(
   {
@@ -11,7 +12,7 @@ const statusHistorySchema = new mongoose.Schema(
 
 const orderSchema = new mongoose.Schema(
   {
-    orderNumber: { type: String, unique: true, sparse: true },
+    orderNumber: { type: String },
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     items: [
       {
@@ -55,9 +56,13 @@ const orderSchema = new mongoose.Schema(
     shippingCost: { type: Number, default: 0 },
     taxAmount: { type: Number, default: 0 },
     // Discount code used on this order, if any (indexed so usage counts are fast)
-    discountCode: { type: String, default: '', index: true },
+    discountCode: { type: String, default: '' },
     discountAmount: { type: Number, default: 0 },
     totalPrice: { type: Number, required: true },
+    // The customer's own note, e.g. "no pepper". Plain text, escaped wherever shown.
+    customerNote: { type: String, default: '', maxlength: 500, trim: true },
+    // Placed while the shop was closed and set to take pre-orders
+    isPreOrder: { type: Boolean, default: false },
     paymentReference: String,
     isPaid: { type: Boolean, default: false },
     paidAt: Date,
@@ -86,5 +91,12 @@ const orderSchema = new mongoose.Schema(
   { timestamps: true }
 )
 
+// Belongs to one shop, and every query must say which (see utils/tenant.js)
+orderSchema.plugin(tenantPlugin)
+// Order numbers repeat between shops (each starts at its own 10001)
+orderSchema.index({ store: 1, orderNumber: 1 }, { unique: true, partialFilterExpression: { orderNumber: { $type: 'string' } } })
+orderSchema.index({ store: 1, createdAt: -1 })
+orderSchema.index({ store: 1, discountCode: 1 })
+orderSchema.index({ store: 1, user: 1 })
 const Order = mongoose.model('Order', orderSchema)
 export default Order

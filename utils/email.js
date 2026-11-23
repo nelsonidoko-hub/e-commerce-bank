@@ -1,29 +1,51 @@
 import { getStoreSettings } from '../controllers/settingsController.js'
+import Store from '../models/Store.js'
+import { storeUrl } from './storeUrl.js'
 
 const esc = (s = '') =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 
 const naira = (n) => `₦${Number(n).toLocaleString('en-NG')}`
 const orderRef = (o) => o.orderNumber || `#${String(o._id).slice(-8).toUpperCase()}`
-const orderUrl = (o) => `${process.env.FRONTEND_URL}/orders/${o._id}`
 const isPickup = (o) => o.deliveryMethod === 'pickup'
 
-// The store name and pickup address come from Admin → Settings, so emails
-// always match what the owner has set. The env variable is only a fallback.
-async function loadStore() {
+// Everything an email needs about the shop it is for: its name and pickup
+// address (Admin → Settings), its web address for links, and where owner
+// alerts go. ref: the shop, or its id (e.g. order.store).
+async function loadStore(ref) {
+  const id = ref?._id || ref
+  let store = ref?.slug ? ref : null
   try {
-    const settings = await getStoreSettings()
+    if (!store) store = await Store.findById(id).lean()
+    if (!store) throw new Error('shop not found')
+    const settings = await getStoreSettings(store)
     return {
-      name: settings.storeName || process.env.STORE_NAME || 'Abuja Store',
+      name: settings.storeName || store.name,
       pickup: settings.pickup || {},
+      notifyEmail: store.notifyEmail || settings.contactEmail || '',
+      url: (path) => storeUrl(store, path),
     }
   } catch (error) {
-    console.error('Could not load store settings for email:', error.message)
-    return { name: process.env.STORE_NAME || 'Abuja Store', pickup: {} }
+    console.error('Could not load shop for email:', error.message)
+    return {
+      name: store?.name || 'Your shop',
+      pickup: {},
+      notifyEmail: store?.notifyEmail || '',
+      url: (path) => (store ? storeUrl(store, path) : path),
+    }
   }
 }
 
-async function sendEmail({ to, subject, html, storeName }) {
+// Emails go out from the platform's address (EMAIL_FROM) but show the shop's
+// name, and customers' replies go to the shop, not to the platform.
+function fromLine(storeName) {
+  const configured = process.env.EMAIL_FROM || ''
+  const address = configured.match(/<([^>]+)>/)?.[1] || configured || 'onboarding@resend.dev'
+  const name = String(storeName || 'Your shop').replace(/["<>\r\n]/g, '').slice(0, 60)
+  return `"${name}" <${address}>`
+}
+
+async function sendEmail({ to, subject, html, storeName, replyTo }) {
   if (!to) return
   if (!process.env.RESEND_API_KEY) {
     console.log(`[email skipped - no RESEND_API_KEY] ${subject} -> ${to}`)
@@ -36,7 +58,8 @@ async function sendEmail({ to, subject, html, storeName }) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: process.env.EMAIL_FROM || `${storeName || 'Abuja Store'} <onboarding@resend.dev>`,
+      from: fromLine(storeName),
+      ...(replyTo ? { reply_to: replyTo } : {}),
       to,
       subject,
       html,
@@ -89,11 +112,25 @@ function deliveryBlock(order) {
   return `<p><b>Delivering to:</b><br>${place}<br>${esc(a.phone)}</p>`
 }
 
-const viewButton = (order) =>
-  `<p><a href="${orderUrl(order)}" style="background:#111;color:#fff;padding:10px 18px;text-decoration:none;border-radius:6px;display:inline-block">View your order</a></p>`
+// The customer's note and the pre-order flag, when there are any
+function extrasBlock(order, forAdmin = false) {
+  let html = ''
+  if (order.isPreOrder) {
+    html += forAdmin
+      ? `<p style="background:#fff7ed;padding:8px 12px;border-radius:6px"><b>Pre-order:</b> placed while the shop was closed.</p>`
+      : `<p style="background:#fff7ed;padding:8px 12px;border-radius:6px"><b>Pre-order:</b> you ordered while we were closed. We will start on it as soon as we open.</p>`
+  }
+  if (order.customerNote) {
+    html += `<p><b>${forAdmin ? 'Customer note' : 'Your note'}:</b><br>${esc(order.customerNote).replace(/\n/g, '<br>')}</p>`
+  }
+  return html
+}
 
-export async function sendPasswordReset(user, resetUrl) {
-  const store = await loadStore()
+const viewButton = (order, store) =>
+  `<p><a href="${esc(store.url(`/orders/${order._id}`))}" style="background:#111;color:#fff;padding:10px 18px;text-decoration:none;border-radius:6px;display:inline-block">View your order</a></p>`
+
+export async function sendPasswordReset(user, resetUrl, shop) {
+  const store = await loadStore(shop)
   await sendEmail({
     to: user.email,
     storeName: store.name,
@@ -109,21 +146,23 @@ export async function sendPasswordReset(user, resetUrl) {
 }
 
 export async function sendOrderConfirmation(order) {
-  const store = await loadStore()
+  const store = await loadStore(order.store)
   const followUp = isPickup(order)
     ? 'We will email you again when it is ready for pickup.'
     : 'We will email you again as it moves along.'
 
   await sendEmail({
     to: order.user.email,
+    replyTo: store.notifyEmail,
     storeName: store.name,
     subject: `Order ${orderRef(order)} confirmed`,
     html: layout(
       `Thanks for your order, ${order.user.name}!`,
       `<p>We have received your payment for order <b>${esc(orderRef(order))}</b>. ${followUp}</p>
        ${itemsTable(order)}
+       ${extrasBlock(order)}
        ${deliveryBlock(order)}
-       ${viewButton(order)}`,
+       ${viewButton(order, store)}`,
       store.name
     ),
   })
@@ -131,7 +170,7 @@ export async function sendOrderConfirmation(order) {
 
 // Sent when a pickup order is ready to collect
 export async function sendPickupReady(order) {
-  const store = await loadStore()
+  const store = await loadStore(order.store)
   const a = order.shippingAddress || {}
   const location = a.location || store.pickup.name || 'our store'
   const address = store.pickup.address
@@ -139,6 +178,7 @@ export async function sendPickupReady(order) {
 
   await sendEmail({
     to: order.user.email,
+    replyTo: store.notifyEmail,
     storeName: store.name,
     subject: `Your order is ready for pickup - ${orderRef(order)}`,
     html: layout(
@@ -147,7 +187,7 @@ export async function sendPickupReady(order) {
        <p><b>Pick up from:</b><br>${esc(location)}${address ? `<br>${esc(address)}` : ''}</p>
        ${note ? `<p><b>Note from the store:</b><br>${esc(note)}</p>` : ''}
        <p style="color:#555;font-size:13px">Please have your order number ready when you arrive.</p>
-       ${itemsTable(order)}${viewButton(order)}`,
+       ${itemsTable(order)}${viewButton(order, store)}`,
       store.name
     ),
   })
@@ -171,7 +211,7 @@ export async function sendStatusUpdate(order) {
   const m = messages[order.status]
   if (!m) return
 
-  const store = await loadStore()
+  const store = await loadStore(order.store)
 
   const t = order.tracking || {}
   let trackingHtml = ''
@@ -189,40 +229,41 @@ export async function sendStatusUpdate(order) {
 
   await sendEmail({
     to: order.user.email,
+    replyTo: store.notifyEmail,
     storeName: store.name,
     subject: `${m.subject} - ${orderRef(order)}`,
     html: layout(
       m.subject,
-      `<p>Hi ${esc(order.user.name)}, ${m.text}</p>${trackingHtml}${itemsTable(order)}${viewButton(order)}`,
+      `<p>Hi ${esc(order.user.name)}, ${m.text}</p>${trackingHtml}${itemsTable(order)}${viewButton(order, store)}`,
       store.name
     ),
   })
 }
 
 export async function notifyAdminNewOrder(order) {
-  const store = await loadStore()
+  const store = await loadStore(order.store)
   const a = order.shippingAddress || {}
   const where = isPickup(order)
     ? `<p><b>Store pickup</b> from ${esc(a.location || 'the store')}</p>`
     : `<p>${[a.address, a.city].filter(Boolean).map((part) => esc(part)).join(', ')}</p>`
 
   await sendEmail({
-    to: process.env.ADMIN_NOTIFY_EMAIL,
+    to: store.notifyEmail,
     storeName: store.name,
-    subject: `New order ${orderRef(order)} - ${naira(order.totalPrice)}${isPickup(order) ? ' (pickup)' : ''}`,
+    subject: `New ${order.isPreOrder ? 'pre-order' : 'order'} ${orderRef(order)} - ${naira(order.totalPrice)}${isPickup(order) ? ' (pickup)' : ''}`,
     html: layout(
       'New paid order',
       `<p><b>${esc(order.user.name)}</b> (${esc(order.user.email)}, ${esc(a.phone)}) just paid.</p>
-       ${itemsTable(order)}${where}`,
+       ${itemsTable(order)}${where}${extrasBlock(order, true)}`,
       store.name
     ),
   })
 }
 
 export async function notifyAdminRefundNeeded(order) {
-  const store = await loadStore()
+  const store = await loadStore(order.store)
   await sendEmail({
-    to: process.env.ADMIN_NOTIFY_EMAIL,
+    to: store.notifyEmail,
     storeName: store.name,
     subject: `REFUND NEEDED - order ${orderRef(order)}`,
     html: layout(
@@ -238,10 +279,10 @@ export async function notifyAdminRefundNeeded(order) {
 
 // Sent to the owner whenever the Paystack settings change, so a change they
 // didn't make is noticed straight away.
-export async function notifyAdminPaymentKeysChanged({ by, changes }) {
-  const store = await loadStore()
+export async function notifyAdminPaymentKeysChanged({ store: shop, by, changes }) {
+  const store = await loadStore(shop)
   await sendEmail({
-    to: process.env.ADMIN_NOTIFY_EMAIL,
+    to: store.notifyEmail,
     storeName: store.name,
     subject: 'Your Paystack payment settings were changed',
     html: layout(

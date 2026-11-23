@@ -1,23 +1,24 @@
 import mongoose from 'mongoose'
+import { tenantPlugin } from '../utils/tenant.js'
 
 const str = (def = '') => ({ type: String, default: def, trim: true })
 
-// monOpen, monClose, monClosed ... for each day of the week
-const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
-const dayFields = Object.fromEntries(
-  DAYS.flatMap((day) => [
-    [`${day}Open`, str('09:00')],
-    [`${day}Close`, str('21:00')],
-    [`${day}Closed`, { type: Boolean, default: false }],
-  ])
-)
+// monOpen, monClose, monClosed ... sunClosed
+function dayFields() {
+  const fields = {}
+  for (const day of ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']) {
+    fields[`${day}Open`] = str('09:00')
+    fields[`${day}Close`] = str('21:00')
+    fields[`${day}Closed`] = { type: Boolean, default: false }
+  }
+  return fields
+}
 
 const settingsSchema = new mongoose.Schema(
   {
     // Fixed key so there is only ever one settings document
-    key: { type: String, default: 'store', unique: true },
 
-    storeName: str('Abuja Store'),
+    storeName: str('My Store'),
     contactEmail: str(),
     contactPhone: str(),
     whatsappNumber: str(),
@@ -55,24 +56,6 @@ const settingsSchema = new mongoose.Schema(
       readyTime: str('Usually ready in 2 to 4 hours'),
     },
 
-    // Opening hours (Admin → Settings). Off by default.
-    //   whenClosed: 'block' = no orders while closed, 'preorder' = orders allowed and flagged
-    hours: {
-      enabled: { type: Boolean, default: false },
-      timezone: str('Africa/Lagos'),
-      whenClosed: str('block'),
-      ...dayFields,
-    },
-
-    // Storefront look (Admin → Themes). An empty override means "use the template's own".
-    theme: {
-      template: str('classic'),
-      brandColor: str(),
-      headingFont: str(),
-      bodyFont: str(),
-      radius: str(),
-    },
-
     // Homepage sections (Admin → Homepage)
     homeArrivals: {
       enabled: { type: Boolean, default: true },
@@ -95,12 +78,12 @@ const settingsSchema = new mongoose.Schema(
     },
     homeCategoryRow: {
       enabled: { type: Boolean, default: true },
-      title: str('Best Shoes'),
-      category: str('shoes'), // category slug whose products fill the row
+      title: str('Popular picks'),
+      category: str(''), // category slug whose products fill the row
     },
     homeFeatured: {
       enabled: { type: Boolean, default: true },
-      title: str('ZERO TO THE WORLD'),
+      title: str('Featured collection'),
       image: str(), // empty = use the built-in picture
       buttonLabel: str('VIEW'),
       buttonLink: str('/shop'),
@@ -112,9 +95,31 @@ const settingsSchema = new mongoose.Schema(
       text: str(),
       link: str(),
     },
+
+    // Storefront look (Admin → Themes). Empty values mean "use the template's own".
+    theme: {
+      template: str('classic'),
+      brandColor: str(),
+      headingFont: str(),
+      bodyFont: str(),
+      radius: str(),
+    },
+
+    // Opening hours (Admin → Settings). Off by default, so the shop is always open.
+    hours: {
+      enabled: { type: Boolean, default: false },
+      timezone: str('Africa/Lagos'),
+      // 'block' = refuse orders while closed, 'preorder' = accept and flag them
+      whenClosed: { type: String, enum: ['block', 'preorder'], default: 'block' },
+      ...dayFields(),
+    },
   },
   { timestamps: true }
 )
 
+// Belongs to one shop, and every query must say which (see utils/tenant.js)
+settingsSchema.plugin(tenantPlugin)
+// Exactly one settings document per shop
+settingsSchema.index({ store: 1 }, { unique: true })
 const Settings = mongoose.model('Settings', settingsSchema)
 export default Settings

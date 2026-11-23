@@ -1,4 +1,6 @@
 import Discount from '../models/Discount.js'
+import mongoose from 'mongoose'
+import { inStore, byId } from '../utils/tenant.js'
 import Order from '../models/Order.js'
 import { applyDiscount, DiscountError } from '../utils/discounts.js'
 
@@ -60,11 +62,13 @@ function cleanFields(body, requireAll) {
 // Admin: every code, with how many times each has been used
 export const getDiscounts = async (req, res) => {
   try {
-    const discounts = await Discount.find().sort({ createdAt: -1 })
+    const discounts = await Discount.find(inStore(req)).sort({ createdAt: -1 })
 
     const usage = await Order.aggregate([
       {
         $match: {
+          // aggregate() doesn't convert ids for us, so this must be a real ObjectId
+          store: new mongoose.Types.ObjectId(String(req.store._id)),
           discountCode: { $in: discounts.map((d) => d.code) },
           status: { $ne: 'cancelled' },
         },
@@ -88,7 +92,7 @@ export const createDiscount = async (req, res) => {
       return res.status(400).json({ message: 'A percentage cannot be more than 100' })
     }
 
-    const discount = await Discount.create(data)
+    const discount = await Discount.create({ ...data, store: req.store._id })
     res.status(201).json(discount)
   } catch (error) {
     if (error.code === 11000) {
@@ -100,7 +104,7 @@ export const createDiscount = async (req, res) => {
 
 export const updateDiscount = async (req, res) => {
   try {
-    const discount = await Discount.findById(req.params.id)
+    const discount = await Discount.findOne(byId(req))
     if (!discount) return res.status(404).json({ message: 'Discount not found' })
 
     const { data, error } = cleanFields(req.body, false)
@@ -125,10 +129,10 @@ export const updateDiscount = async (req, res) => {
 // Orders keep the code text they used, so deleting a code never breaks old orders
 export const deleteDiscount = async (req, res) => {
   try {
-    const discount = await Discount.findById(req.params.id)
+    const discount = await Discount.findOne(byId(req))
     if (!discount) return res.status(404).json({ message: 'Discount not found' })
 
-    await discount.deleteOne()
+    await Discount.deleteOne(byId(req, discount._id))
     res.json({ message: 'Discount removed' })
   } catch (error) {
     res.status(500).json({ message: error.message })
@@ -141,7 +145,7 @@ export const deleteDiscount = async (req, res) => {
 export const validateDiscountCode = async (req, res) => {
   try {
     const { code, subtotal } = req.body
-    const { discount, amount } = await applyDiscount(code, Number(subtotal) || 0, req.user._id)
+    const { discount, amount } = await applyDiscount(req.store._id, code, Number(subtotal) || 0, req.user._id)
 
     res.json({
       code: discount.code,

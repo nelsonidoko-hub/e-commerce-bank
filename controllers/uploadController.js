@@ -10,7 +10,7 @@ export const uploadImage = async (req, res) => {
     const uploadFromBuffer = () => {
       return new Promise((resolve, reject) => {
         const stream = cloudinary.uploader.upload_stream(
-          { folder: 'abujastore' },
+          { folder: `stores/${req.store.slug}` },
           (error, result) => {
             if (error) reject(error)
             else resolve(result)
@@ -46,7 +46,7 @@ export const uploadMediaFile = async (req, res) => {
       return new Promise((resolve, reject) => {
         const stream = cloudinary.uploader.upload_stream(
           {
-            folder: 'abujastore/hero',
+            folder: `stores/${req.store.slug}/hero`,
             // Without this, Cloudinary treats every upload as an image
             resource_type: isVideo ? 'video' : 'image',
           },

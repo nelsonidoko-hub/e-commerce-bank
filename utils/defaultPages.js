@@ -39,7 +39,7 @@ Tap the Chat With Us button or visit our Contact page.`,
 Orders are prepared within [1 to 2] working days after payment is confirmed. Orders placed on weekends or public holidays are processed on the next working day.
 
 ## Delivery time
-- Within Abuja: [1 to 3] working days
+- Within [your city]: [1 to 3] working days
 - Other parts of Nigeria: [3 to 7] working days
 
 These are estimates, not guarantees. Delays can happen because of weather, traffic or courier issues.

@@ -1,9 +1,10 @@
 import Logo from '../models/Logo.js'
+import { inStore } from '../utils/tenant.js'
 
 // Get the store logo
 export const getLogo = async (req, res) => {
   try {
-    const logo = await Logo.findOne({ name: 'main' })
+    const logo = await Logo.findOne(inStore(req, { name: 'main' }))
 
     if (!logo) {
       return res.status(404).json({ message: 'Logo not found' })
@@ -18,7 +19,8 @@ export const getLogo = async (req, res) => {
 // Create the store logo
 export const createLogo = async (req, res) => {
   try {
-    const { imageUrl, altText } = req.body
+    const imageUrl = typeof req.body.imageUrl === 'string' ? req.body.imageUrl : undefined
+    const altText = typeof req.body.altText === 'string' ? req.body.altText : undefined
 
     if (!imageUrl) {
       return res.status(400).json({
@@ -27,7 +29,7 @@ export const createLogo = async (req, res) => {
     }
 
     // Only one main logo is allowed
-    const existingLogo = await Logo.findOne({ name: 'main' })
+    const existingLogo = await Logo.findOne(inStore(req, { name: 'main' }))
 
     if (existingLogo) {
       return res.status(400).json({
@@ -36,9 +38,10 @@ export const createLogo = async (req, res) => {
     }
 
     const logo = await Logo.create({
+      store: req.store._id,
       name: 'main',
       imageUrl: imageUrl.trim(),
-      altText: altText?.trim() || 'Abuja Store Logo',
+      altText: altText?.trim() || `${req.store.name} logo`,
       updatedBy: req.user?._id || null,
     })
 
@@ -51,7 +54,7 @@ export const createLogo = async (req, res) => {
 // Update the store logo
 export const updateLogo = async (req, res) => {
   try {
-    const logo = await Logo.findOne({ name: 'main' })
+    const logo = await Logo.findOne(inStore(req, { name: 'main' }))
 
     if (!logo) {
       return res.status(404).json({
@@ -59,7 +62,8 @@ export const updateLogo = async (req, res) => {
       })
     }
 
-    const { imageUrl, altText } = req.body
+    const imageUrl = typeof req.body.imageUrl === 'string' ? req.body.imageUrl : undefined
+    const altText = typeof req.body.altText === 'string' ? req.body.altText : undefined
 
     if (imageUrl !== undefined) {
       if (!imageUrl.trim()) {
@@ -88,7 +92,8 @@ export const updateLogo = async (req, res) => {
 // Create the logo if it doesn't exist, or update it if it does
 export const saveLogo = async (req, res) => {
   try {
-    const { imageUrl, altText } = req.body
+    const imageUrl = typeof req.body.imageUrl === 'string' ? req.body.imageUrl : undefined
+    const altText = typeof req.body.altText === 'string' ? req.body.altText : undefined
 
     if (!imageUrl || !imageUrl.trim()) {
       return res.status(400).json({
@@ -97,11 +102,11 @@ export const saveLogo = async (req, res) => {
     }
 
     const logo = await Logo.findOneAndUpdate(
-      { name: 'main' },
+      inStore(req, { name: 'main' }),
       {
         $set: {
           imageUrl: imageUrl.trim(),
-          altText: altText?.trim() || 'Abuja Store Logo',
+          altText: altText?.trim() || `${req.store.name} logo`,
           updatedBy: req.user?._id || null,
         },
         $setOnInsert: {
@@ -109,7 +114,7 @@ export const saveLogo = async (req, res) => {
         },
       },
       {
-        new: true,
+        returnDocument: 'after',
         upsert: true,
         runValidators: true,
         setDefaultsOnInsert: true,

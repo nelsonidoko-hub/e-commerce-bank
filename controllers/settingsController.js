@@ -2,8 +2,6 @@ import Settings from '../models/Settings.js'
 
 const TOP_LEVEL_FIELDS = ['storeName', 'contactEmail', 'contactPhone', 'whatsappNumber']
 
-const HOURS_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
-
 // Only these nested fields can be changed through the API
 const SECTION_FIELDS = {
   address: ['line1', 'city', 'state', 'country'],
@@ -12,57 +10,11 @@ const SECTION_FIELDS = {
   tax: ['rate', 'label'],
   pickup: ['enabled', 'name', 'address', 'readyTime'],
   announcement: ['enabled', 'text', 'link'],
-  theme: ['template', 'brandColor', 'headingFont', 'bodyFont', 'radius'],
-  hours: [
-    'enabled',
-    'timezone',
-    'whenClosed',
-    ...HOURS_DAYS.flatMap((day) => [`${day}Open`, `${day}Close`, `${day}Closed`]),
-  ],
   homeArrivals: ['enabled', 'title', 'subtitle', 'count'],
   homeBestSellers: ['enabled', 'label', 'title'],
   homeBanner: ['enabled', 'image', 'heading', 'text', 'buttonLabel', 'buttonLink'],
   homeCategoryRow: ['enabled', 'title', 'category'],
   homeFeatured: ['enabled', 'title', 'image', 'buttonLabel', 'buttonLink', 'category'],
-}
-
-// Allowed values for the storefront theme. Keep these in step with utils/themes.js
-// in the frontend when a template or font is added.
-const THEME_TEMPLATES = ['classic', 'minimal', 'bold', 'fresh']
-const THEME_HEADING_FONTS = ['poppins', 'epilogue', 'anton', 'playfair']
-const THEME_BODY_FONTS = ['epilogue', 'poppins']
-const THEME_RADIUS = ['square', 'soft', 'round']
-
-// Returns a message if the value is not allowed, or null if it is fine.
-// An empty string means "no override", so it is always allowed for the optional ones.
-const VALIDATORS = {
-  'theme.template': (v) => (THEME_TEMPLATES.includes(v) ? null : 'That template does not exist'),
-  'theme.brandColor': (v) =>
-    v === '' || /^#[0-9a-fA-F]{6}$/.test(v) ? null : 'The brand colour must look like #1a73e8',
-  'theme.headingFont': (v) =>
-    v === '' || THEME_HEADING_FONTS.includes(v) ? null : 'That heading font is not available',
-  'theme.bodyFont': (v) =>
-    v === '' || THEME_BODY_FONTS.includes(v) ? null : 'That body font is not available',
-  'theme.radius': (v) =>
-    v === '' || THEME_RADIUS.includes(v) ? null : 'Choose square, soft or rounded corners',
-}
-
-// Opening hours: a real time zone, a known closed-shop rule, and times like 09:00
-const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/
-VALIDATORS['hours.timezone'] = (v) => {
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: v })
-    return null
-  } catch {
-    return 'That time zone is not recognised'
-  }
-}
-VALIDATORS['hours.whenClosed'] = (v) =>
-  ['block', 'preorder'].includes(v) ? null : 'Choose whether to block orders or allow pre-orders'
-for (const day of HOURS_DAYS) {
-  const timeCheck = (v) => (TIME_PATTERN.test(v) ? null : 'Times must look like 09:00 or 21:30')
-  VALIDATORS[`hours.${day}Open`] = timeCheck
-  VALIDATORS[`hours.${day}Close`] = timeCheck
 }
 
 const NUMBER_FIELDS = new Set([
@@ -79,16 +31,89 @@ const BOOLEAN_FIELDS = new Set([
   'homeBanner.enabled',
   'homeCategoryRow.enabled',
   'homeFeatured.enabled',
-  'hours.enabled',
-  ...HOURS_DAYS.map((day) => `hours.${day}Closed`),
 ])
 
-// Always returns the one settings document, creating it with defaults the first time.
-// Used by the order controller so shipping and tax are decided on the server.
-export async function getStoreSettings() {
+// ---------- theme and opening hours: stricter checks ----------
+// These must match frontend utils/themes.js. Empty string = "use the template's own".
+const TEMPLATES = ['classic', 'minimal', 'bold', 'fresh', 'catalog', 'glow', 'tech', 'playful']
+const HEADING_FONTS = ['poppins', 'epilogue', 'anton', 'playfair']
+const BODY_FONTS = ['epilogue', 'poppins']
+const RADII = ['square', 'soft', 'round']
+const HEX = /^#[0-9a-f]{6}$/i
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
+const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+
+// Throws a message the admin can read; returns the clean values to save
+export function cleanTheme(input) {
+  const out = {}
+  const pick = (field, allowed, label) => {
+    if (input[field] === undefined) return
+    const value = String(input[field]).trim().toLowerCase()
+    if (value !== '' && !allowed.includes(value)) throw new Error(`Unknown ${label}`)
+    out[field] = value
+  }
+
+  if (input.template !== undefined) {
+    const t = String(input.template).trim().toLowerCase()
+    if (!TEMPLATES.includes(t)) throw new Error('Unknown template')
+    out.template = t
+  }
+  pick('headingFont', HEADING_FONTS, 'heading font')
+  pick('bodyFont', BODY_FONTS, 'text font')
+  pick('radius', RADII, 'corner style')
+
+  if (input.brandColor !== undefined) {
+    const c = String(input.brandColor).trim().toLowerCase()
+    if (c !== '' && !HEX.test(c)) throw new Error('Brand colour must look like #1a2b3c')
+    out.brandColor = c
+  }
+  return out
+}
+
+export function cleanHours(input) {
+  const out = {}
+  if (input.enabled !== undefined) out.enabled = Boolean(input.enabled)
+
+  if (input.timezone !== undefined) {
+    const tz = String(input.timezone).trim()
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: tz })
+    } catch {
+      throw new Error('Unknown time zone')
+    }
+    out.timezone = tz
+  }
+
+  if (input.whenClosed !== undefined) {
+    if (!['block', 'preorder'].includes(input.whenClosed)) {
+      throw new Error('"When closed" must be block or preorder')
+    }
+    out.whenClosed = input.whenClosed
+  }
+
+  for (const day of DAYS) {
+    for (const part of ['Open', 'Close']) {
+      const key = `${day}${part}`
+      if (input[key] === undefined) continue
+      const value = String(input[key]).trim()
+      if (!TIME.test(value)) throw new Error(`${key} must be a time like 09:00`)
+      out[key] = value
+    }
+    if (input[`${day}Closed`] !== undefined) out[`${day}Closed`] = Boolean(input[`${day}Closed`])
+  }
+  return out
+}
+
+// Always returns the shop's settings document, creating it with defaults the
+// first time (named after the shop). Used by the order controller so shipping
+// and tax are decided on the server.
+// store: the shop (req.store), or its id
+export async function getStoreSettings(store) {
+  const storeId = store?._id || store
+  if (!storeId) throw new Error('getStoreSettings needs a store')
   return Settings.findOneAndUpdate(
-    { key: 'store' },
-    { $setOnInsert: { key: 'store' } },
+    { store: storeId },
+    { $setOnInsert: { storeName: store?.name || 'My Store' } },
     { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
   )
 }
@@ -96,7 +121,7 @@ export async function getStoreSettings() {
 // Public: nothing in here is secret, and the storefront needs it
 export const getSettings = async (req, res) => {
   try {
-    const settings = await getStoreSettings()
+    const settings = await getStoreSettings(req.store)
     res.json(settings)
   } catch (error) {
     res.status(500).json({ message: error.message })
@@ -105,7 +130,7 @@ export const getSettings = async (req, res) => {
 
 export const updateSettings = async (req, res) => {
   try {
-    const settings = await getStoreSettings()
+    const settings = await getStoreSettings(req.store)
 
     for (const field of TOP_LEVEL_FIELDS) {
       if (req.body[field] !== undefined) {
@@ -144,13 +169,22 @@ export const updateSettings = async (req, res) => {
           value = String(value).trim()
         }
 
-        const problem = VALIDATORS[path] ? VALIDATORS[path](value) : null
-        if (problem) {
-          return res.status(400).json({ message: problem })
-        }
-
         settings[section][field] = value
       }
+    }
+
+    // Theme and hours have their own, stricter rules
+    const special = { theme: cleanTheme, hours: cleanHours }
+    for (const [section, clean] of Object.entries(special)) {
+      const incoming = req.body[section]
+      if (!incoming || typeof incoming !== 'object') continue
+      let values
+      try {
+        values = clean(incoming)
+      } catch (err) {
+        return res.status(400).json({ message: err.message })
+      }
+      for (const [field, value] of Object.entries(values)) settings[section][field] = value
     }
 
     const saved = await settings.save()

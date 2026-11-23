@@ -1,4 +1,5 @@
 import HeroSlide from '../models/HeroSlide.js'
+import { inStore, byId } from '../utils/tenant.js'
 
 const EDITABLE_FIELDS = [
   'mediaType',
@@ -14,7 +15,7 @@ const EDITABLE_FIELDS = [
 // Public: only active slides, in display order
 export const getSlides = async (req, res) => {
   try {
-    const slides = await HeroSlide.find({ active: true }).sort({ order: 1, createdAt: 1 })
+    const slides = await HeroSlide.find(inStore(req, { active: true })).sort({ order: 1, createdAt: 1 })
     res.json(slides)
   } catch (error) {
     res.status(500).json({ message: error.message })
@@ -24,7 +25,7 @@ export const getSlides = async (req, res) => {
 // Admin: every slide, including inactive ones
 export const getAllSlides = async (req, res) => {
   try {
-    const slides = await HeroSlide.find().sort({ order: 1, createdAt: 1 })
+    const slides = await HeroSlide.find(inStore(req)).sort({ order: 1, createdAt: 1 })
     res.json(slides)
   } catch (error) {
     res.status(500).json({ message: error.message })
@@ -44,14 +45,14 @@ export const createSlide = async (req, res) => {
     }
 
     // New slides go to the end of the line
-    const count = await HeroSlide.countDocuments()
+    const count = await HeroSlide.countDocuments(inStore(req))
 
-    const data = { order: count }
+    const data = { order: count, store: req.store._id }
     for (const key of EDITABLE_FIELDS) {
       if (req.body[key] !== undefined && key !== 'order') data[key] = req.body[key]
     }
 
-    const slide = await HeroSlide.create(data)
+    const slide = await HeroSlide.create({ ...data, store: req.store._id })
     res.status(201).json(slide)
   } catch (error) {
     res.status(400).json({ message: error.message })
@@ -60,7 +61,7 @@ export const createSlide = async (req, res) => {
 
 export const updateSlide = async (req, res) => {
   try {
-    const slide = await HeroSlide.findById(req.params.id)
+    const slide = await HeroSlide.findOne(byId(req))
     if (!slide) {
       return res.status(404).json({ message: 'Slide not found' })
     }
@@ -82,12 +83,12 @@ export const updateSlide = async (req, res) => {
 
 export const deleteSlide = async (req, res) => {
   try {
-    const slide = await HeroSlide.findById(req.params.id)
+    const slide = await HeroSlide.findOne(byId(req))
     if (!slide) {
       return res.status(404).json({ message: 'Slide not found' })
     }
 
-    await slide.deleteOne()
+    await HeroSlide.deleteOne(byId(req, slide._id))
     res.json({ message: 'Slide removed' })
   } catch (error) {
     res.status(500).json({ message: error.message })

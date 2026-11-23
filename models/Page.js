@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { tenantPlugin } from '../utils/tenant.js'
 
 const pageSchema = new mongoose.Schema(
   {
@@ -6,7 +7,6 @@ const pageSchema = new mongoose.Schema(
     slug: {
       type: String,
       required: true,
-      unique: true,
       lowercase: true,
       trim: true,
     },
@@ -32,5 +32,8 @@ const pageSchema = new mongoose.Schema(
   { timestamps: true }
 )
 
+// Belongs to one shop, and every query must say which (see utils/tenant.js)
+pageSchema.plugin(tenantPlugin)
+pageSchema.index({ store: 1, slug: 1 }, { unique: true })
 const Page = mongoose.model('Page', pageSchema)
 export default Page

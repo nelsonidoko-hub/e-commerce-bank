@@ -1,5 +1,14 @@
 import jwt from 'jsonwebtoken'
 import User from '../models/User.js'
+import { canManageStore } from '../utils/storeAccess.js'
+
+// Two kinds of account:
+//   customer  belongs to one shop (user.store). Their login only works there,
+//             like Shopify: the same email can shop at two stores separately.
+//   merchant  belongs to the platform (user.store is null) and runs shops.
+//
+// Every route below runs after resolveStore, so req.store is the shop the
+// request is for.
 
 export const protect = async (req, res, next) => {
   const header = req.headers.authorization
@@ -27,6 +36,11 @@ export const protect = async (req, res, next) => {
       return res.status(401).json({ message: 'Not authorized, please log in again' })
     }
 
+    // A customer of one shop can never act in another shop
+    if (user.store && (!req.store || String(user.store) !== String(req.store._id))) {
+      return res.status(401).json({ message: 'Not authorized, please log in again' })
+    }
+
     req.user = user
   } catch (error) {
     return res.status(401).json({ message: 'Not authorized, token failed' })
@@ -37,8 +51,10 @@ export const protect = async (req, res, next) => {
   next()
 }
 
+// "Admin" means: runs THIS shop (its owner, or staff on Pro).
+// Owning another shop gives no access here.
 export const admin = (req, res, next) => {
-  if (req.user && req.user.role === 'admin') {
+  if (req.user && canManageStore(req.user, req.store)) {
     next()
   } else {
     res.status(403).json({ message: 'Not authorized as admin' })

@@ -1,4 +1,5 @@
 import Page from '../models/Page.js'
+import { inStore, byId } from '../utils/tenant.js'
 import { DEFAULT_PAGES } from '../utils/defaultPages.js'
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
@@ -12,19 +13,18 @@ const RESERVED_SLUGS = new Set([
 // Adds the starter pages the first time, and only when there are none at all,
 // so a page the owner deleted on purpose never comes back.
 // Upserting by slug makes this safe even if two requests arrive together.
-async function ensureDefaultPages() {
-  const count = await Page.estimatedDocumentCount()
+// Each shop gets its own copy.
+async function ensureDefaultPages(req) {
+  const count = await Page.countDocuments(inStore(req))
   if (count > 0) return
 
-  await Page.bulkWrite(
-    DEFAULT_PAGES.map((page) => ({
-      updateOne: {
-        filter: { slug: page.slug },
-        update: { $setOnInsert: page },
-        upsert: true,
-      },
-    }))
-  )
+  for (const page of DEFAULT_PAGES) {
+    await Page.findOneAndUpdate(
+      inStore(req, { slug: page.slug }),
+      { $setOnInsert: page },
+      { upsert: true, setDefaultsOnInsert: true }
+    )
+  }
 }
 
 // Checks what the admin form sent and returns clean data to save
@@ -76,8 +76,8 @@ function cleanFields(body, requireAll) {
 // Public: only what the footer needs, for published pages
 export const getPublicPages = async (req, res) => {
   try {
-    await ensureDefaultPages()
-    const pages = await Page.find({ published: true })
+    await ensureDefaultPages(req)
+    const pages = await Page.find(inStore(req, { published: true }))
       .select('slug title footerColumn order')
       .sort({ order: 1, title: 1 })
     res.json(pages)
@@ -89,8 +89,8 @@ export const getPublicPages = async (req, res) => {
 // Public: one published page, with its text
 export const getPageBySlug = async (req, res) => {
   try {
-    await ensureDefaultPages()
-    const page = await Page.findOne({ slug: req.params.slug.toLowerCase(), published: true })
+    await ensureDefaultPages(req)
+    const page = await Page.findOne(inStore(req, { slug: String(req.params.slug).toLowerCase(), published: true }))
     if (!page) return res.status(404).json({ message: 'Page not found' })
     res.json(page)
   } catch (error) {
@@ -101,8 +101,8 @@ export const getPageBySlug = async (req, res) => {
 // Admin: everything, including hidden pages
 export const getAllPages = async (req, res) => {
   try {
-    await ensureDefaultPages()
-    const pages = await Page.find().sort({ footerColumn: 1, order: 1, title: 1 })
+    await ensureDefaultPages(req)
+    const pages = await Page.find(inStore(req)).sort({ footerColumn: 1, order: 1, title: 1 })
     res.json(pages)
   } catch (error) {
     res.status(500).json({ message: error.message })
@@ -114,7 +114,7 @@ export const createPage = async (req, res) => {
     const { data, error } = cleanFields(req.body, true)
     if (error) return res.status(400).json({ message: error })
 
-    const page = await Page.create(data)
+    const page = await Page.create({ ...data, store: req.store._id })
     res.status(201).json(page)
   } catch (error) {
     if (error.code === 11000) {
@@ -126,7 +126,7 @@ export const createPage = async (req, res) => {
 
 export const updatePage = async (req, res) => {
   try {
-    const page = await Page.findById(req.params.id)
+    const page = await Page.findOne(byId(req))
     if (!page) return res.status(404).json({ message: 'Page not found' })
 
     const { data, error } = cleanFields(req.body, false)
@@ -145,10 +145,10 @@ export const updatePage = async (req, res) => {
 
 export const deletePage = async (req, res) => {
   try {
-    const page = await Page.findById(req.params.id)
+    const page = await Page.findOne(byId(req))
     if (!page) return res.status(404).json({ message: 'Page not found' })
 
-    await page.deleteOne()
+    await Page.deleteOne(byId(req, page._id))
     res.json({ message: 'Page removed' })
   } catch (error) {
     res.status(500).json({ message: error.message })

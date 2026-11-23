@@ -11,11 +11,13 @@ const COUNTS_AS_USED = { $ne: 'cancelled' }
 // Checks a code against the rules and works out how much it takes off.
 // Used both for the preview at checkout and again when the order is created,
 // so the amount charged is always decided on the server.
-export async function applyDiscount(rawCode, subtotal, userId) {
+// storeId: codes belong to one shop, and usage only counts that shop's orders.
+export async function applyDiscount(storeId, rawCode, subtotal, userId) {
+  if (!storeId) throw new Error('applyDiscount needs a store')
   const code = String(rawCode || '').trim().toUpperCase()
   if (!code) throw new DiscountError('Enter a discount code')
 
-  const discount = await Discount.findOne({ code })
+  const discount = await Discount.findOne({ store: storeId, code })
   if (!discount || !discount.active) {
     throw new DiscountError('That discount code is not valid')
   }
@@ -29,7 +31,7 @@ export async function applyDiscount(rawCode, subtotal, userId) {
   }
 
   if (discount.usageLimit > 0) {
-    const used = await Order.countDocuments({ discountCode: code, status: COUNTS_AS_USED })
+    const used = await Order.countDocuments({ store: storeId, discountCode: code, status: COUNTS_AS_USED })
     if (used >= discount.usageLimit) {
       throw new DiscountError('This discount code has been fully used')
     }
@@ -37,6 +39,7 @@ export async function applyDiscount(rawCode, subtotal, userId) {
 
   if (discount.oncePerCustomer && userId) {
     const alreadyUsed = await Order.exists({
+      store: storeId,
       user: userId,
       discountCode: code,
       status: COUNTS_AS_USED,

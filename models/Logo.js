@@ -1,12 +1,12 @@
 
 import mongoose from 'mongoose'
+import { tenantPlugin } from '../utils/tenant.js'
 
 const logoSchema = new mongoose.Schema(
   {
     name: {
       type: String,
       default: 'main',
-      unique: true,
       required: true,
     },
 
@@ -18,7 +18,7 @@ const logoSchema = new mongoose.Schema(
 
     altText: {
       type: String,
-      default: 'Abuja Store Logo',
+      default: 'Store logo',
       trim: true,
     },
 
@@ -30,6 +30,10 @@ const logoSchema = new mongoose.Schema(
   },
   { timestamps: true }
 )
+
+// Belongs to one shop, and every query must say which (see utils/tenant.js)
+logoSchema.plugin(tenantPlugin)
+logoSchema.index({ store: 1, name: 1 }, { unique: true })
 
 const Logo = mongoose.model('Logo', logoSchema)
 

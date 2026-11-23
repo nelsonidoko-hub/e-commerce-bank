@@ -14,17 +14,20 @@ function expiryCondition() {
 }
 
 export async function expireUnpaidOrders() {
+  // This timer works across every shop on purpose, hence allStores
   const stale = await Order.find({
     status: 'pending',
     isPaid: false,
     $or: expiryCondition(),
-  }).select('_id')
+  })
+    .select('_id store')
+    .setOptions({ allStores: true })
 
-  for (const { _id } of stale) {
+  for (const { _id, store } of stale) {
     // Atomic claim: only cancels if it is still unpaid AND still expired
     // (a "Pay now" click in the meantime extends expiresAt and wins)
     const order = await Order.findOneAndUpdate(
-      { _id, status: 'pending', isPaid: false, $or: expiryCondition() },
+      { store, _id, status: 'pending', isPaid: false, $or: expiryCondition() },
       {
         $set: { status: 'cancelled', expiredAt: new Date() },
         $push: {
@@ -33,7 +36,7 @@ export async function expireUnpaidOrders() {
       },
       { returnDocument: 'after' }
     )
-    if (order) await restoreStock(order.items)
+    if (order) await restoreStock(store, order.items)
   }
 
   return stale.length

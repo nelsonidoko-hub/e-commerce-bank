@@ -9,6 +9,7 @@ import {
 } from '../utils/paystackConfig.js'
 import { notifyAdminPaymentKeysChanged } from '../utils/email.js'
 import { isString } from '../utils/validate.js'
+import { webhookUrl } from '../utils/storeUrl.js'
 
 // Paystack secret keys look like sk_test_xxxxxxxx or sk_live_xxxxxxxx
 const KEY_PATTERNS = {
@@ -23,27 +24,29 @@ function serverError(res, error, where) {
 
 // Everything the admin page needs, and nothing secret: never the key itself,
 // never the encrypted value, only whether one is saved and its last 4 characters.
-async function buildStatus() {
-  const config = await getPaymentConfig()
-  const resolved = await resolvePaystack()
+async function buildStatus(store) {
+  const config = await getPaymentConfig(store._id)
+  const resolved = await resolvePaystack(store._id)
 
   return {
     mode: config.mode,
     test: { configured: Boolean(config.testSecretEnc), last4: config.testLast4 },
     live: { configured: Boolean(config.liveSecretEnc), last4: config.liveLast4 },
-    activeSource: resolved.source, // 'dashboard' | 'environment' | 'none'
+    activeSource: resolved.source, // 'dashboard' | 'none'
     activeMode: resolved.mode,
     problem: resolved.problem,
-    environmentKeyPresent: Boolean(process.env.PAYSTACK_SECRET_KEY),
+    environmentKeyPresent: false,
     encryptionReady: encryptionReady(),
-    webhookPath: '/api/payments/webhook',
+    // This shop's own webhook address, to paste into its Paystack dashboard
+    webhookPath: `/api/payments/webhook/${store._id}`,
+    webhookUrl: webhookUrl(store),
     updatedAt: config.updatedAt,
   }
 }
 
 export const getPaymentSettings = async (req, res) => {
   try {
-    res.json(await buildStatus())
+    res.json(await buildStatus(req.store))
   } catch (error) {
     serverError(res, error, 'getPaymentSettings')
   }
@@ -69,7 +72,7 @@ export const updatePaymentSettings = async (req, res) => {
       return res.status(403).json({ message: 'That password is not correct' })
     }
 
-    const config = await getPaymentConfig()
+    const config = await getPaymentConfig(req.store._id)
     const changes = []
 
     for (const [which, value] of [
@@ -109,8 +112,7 @@ export const updatePaymentSettings = async (req, res) => {
     }
 
     // The mode in use must always have a key saved. The one exception is
-    // removing the last saved key, which hands payments back to the
-    // PAYSTACK_SECRET_KEY setting on the server.
+    // removing the last saved key, which switches online payment off.
     const chosenKey = config.mode === 'live' ? config.liveSecretEnc : config.testSecretEnc
     const anyKey = Boolean(config.testSecretEnc || config.liveSecretEnc)
     const removedLastKey = !anyKey && (removeTest || removeLive)
@@ -126,14 +128,14 @@ export const updatePaymentSettings = async (req, res) => {
 
     config.updatedBy = req.user._id
     await config.save()
-    clearPaystackCache()
+    clearPaystackCache(req.store._id)
 
     // Tell the owner, so a change they didn't make is noticed straight away
-    notifyAdminPaymentKeysChanged({ by: user, changes }).catch((e) =>
+    notifyAdminPaymentKeysChanged({ store: req.store, by: user, changes }).catch((e) =>
       console.error('Payment change email error:', e.message)
     )
 
-    res.json(await buildStatus())
+    res.json(await buildStatus(req.store))
   } catch (error) {
     serverError(res, error, 'updatePaymentSettings')
   }
@@ -148,7 +150,7 @@ export const testPaystackConnection = async (req, res) => {
     let mode
 
     if (which === 'test' || which === 'live') {
-      const config = await getPaymentConfig()
+      const config = await getPaymentConfig(req.store._id)
       const stored = which === 'live' ? config.liveSecretEnc : config.testSecretEnc
       if (!stored) {
         return res.status(400).json({ message: `No ${which} key is saved yet` })
@@ -159,7 +161,7 @@ export const testPaystackConnection = async (req, res) => {
       secret = decrypt(stored)
       mode = which
     } else {
-      const resolved = await resolvePaystack()
+      const resolved = await resolvePaystack(req.store._id)
       if (!resolved.secret) {
         return res.status(400).json({ message: 'Paystack is not set up yet' })
       }

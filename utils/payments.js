@@ -1,3 +1,4 @@
+import mongoose from 'mongoose'
 import Order from '../models/Order.js'
 import { reserveStock, restoreStock } from './stock.js'
 import {
@@ -7,10 +8,14 @@ import {
   notifyAdminRefundNeeded,
 } from './email.js'
 
-export async function markOrderPaid(orderId, reference, amountKobo) {
-  if (!orderId) return { order: null }
+// storeId: the shop whose Paystack account took the payment. An order from a
+// different shop is treated as not found, so one shop's payment can never mark
+// another shop's order as paid.
+export async function markOrderPaid(storeId, orderId, reference, amountKobo) {
+  if (!storeId) throw new Error('markOrderPaid needs a store')
+  if (!orderId || !mongoose.isValidObjectId(orderId)) return { order: null }
 
-  const existing = await Order.findById(orderId)
+  const existing = await Order.findOne({ store: storeId, _id: orderId })
   if (!existing) return { order: null }
   if (existing.isPaid) return { order: existing, alreadyPaid: true }
 
@@ -26,7 +31,7 @@ export async function markOrderPaid(orderId, reference, amountKobo) {
 
   if (existing.status === 'cancelled') {
     // Only orders that auto-expired can be reopened. Anything cancelled on purpose stays cancelled.
-    reservedAgain = Boolean(existing.expiredAt) && (await reserveStock(existing.items))
+    reservedAgain = Boolean(existing.expiredAt) && (await reserveStock(storeId, existing.items))
     if (reservedAgain) {
       note = 'Payment received after the hold expired; stock was reserved again'
     } else {
@@ -36,18 +41,18 @@ export async function markOrderPaid(orderId, reference, amountKobo) {
   }
 
   const order = await Order.findOneAndUpdate(
-    { _id: orderId, isPaid: false },
+    { store: storeId, _id: orderId, isPaid: false },
     {
       $set: { isPaid: true, paidAt: new Date(), paymentReference: reference, status },
       $push: { statusHistory: { status, note, at: new Date() } },
     },
-    { new: true }
+    { returnDocument: 'after' }
   ).populate('user', 'name email')
 
   if (!order) {
     // Another request marked it paid first
-    if (reservedAgain) await restoreStock(existing.items)
-    return { order: await Order.findById(orderId), alreadyPaid: true }
+    if (reservedAgain) await restoreStock(storeId, existing.items)
+    return { order: await Order.findOne({ store: storeId, _id: orderId }), alreadyPaid: true }
   }
 
   if (status === 'paid') {

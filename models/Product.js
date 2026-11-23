@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { tenantPlugin } from '../utils/tenant.js'
 
 const productSchema = new mongoose.Schema(
   {
@@ -7,7 +8,7 @@ const productSchema = new mongoose.Schema(
     oldPrice: { type: Number, min: 0, default: null },
     onSale: { type: Boolean, default: false },
     bestSeller: { type: Boolean, default: false },
-    category: { type: String, required: true, lowercase: true, index: true },
+    category: { type: String, required: true, lowercase: true },
     image: { type: String, required: true },
     hoverImage: { type: String, default: '' },
     // Extra gallery shots (back view, another color, etc.) shown as
@@ -34,6 +35,10 @@ productSchema.pre('save', function () {
   }
 })
 
+// Belongs to one shop, and every query must say which (see utils/tenant.js)
+productSchema.plugin(tenantPlugin)
+productSchema.index({ store: 1, category: 1 })
+productSchema.index({ store: 1, bestSeller: 1 })
 const Product = mongoose.model('Product', productSchema)
 
 export default Product
