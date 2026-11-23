@@ -24,6 +24,8 @@ const heroSlideSchema = new mongoose.Schema(
 
     // Inactive slides are kept but not shown on the storefront
     active: { type: Boolean, default: true },
+    // Starter banner added at sign-up
+    isSample: { type: Boolean, default: false },
   },
   { timestamps: true }
 )

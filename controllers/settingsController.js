@@ -1,3 +1,6 @@
+import { upsertSafely } from '../utils/tenant.js'
+import { cleanSections, liveSections, SectionError } from '../utils/sections.js'
+import { canManageStore } from '../utils/storeAccess.js'
 import Settings from '../models/Settings.js'
 
 const TOP_LEVEL_FIELDS = ['storeName', 'contactEmail', 'contactPhone', 'whatsappNumber']
@@ -35,7 +38,7 @@ const BOOLEAN_FIELDS = new Set([
 
 // ---------- theme and opening hours: stricter checks ----------
 // These must match frontend utils/themes.js. Empty string = "use the template's own".
-const TEMPLATES = ['classic', 'minimal', 'bold', 'fresh', 'catalog', 'glow', 'tech', 'playful']
+export const TEMPLATES = ['classic', 'minimal', 'bold', 'fresh', 'catalog', 'glow', 'tech', 'playful']
 const HEADING_FONTS = ['poppins', 'epilogue', 'anton', 'playfair']
 const BODY_FONTS = ['epilogue', 'poppins']
 const RADII = ['square', 'soft', 'round']
@@ -111,18 +114,38 @@ export function cleanHours(input) {
 export async function getStoreSettings(store) {
   const storeId = store?._id || store
   if (!storeId) throw new Error('getStoreSettings needs a store')
-  return Settings.findOneAndUpdate(
-    { store: storeId },
-    { $setOnInsert: { storeName: store?.name || 'My Store' } },
-    { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
+  return upsertSafely(() =>
+    Settings.findOneAndUpdate(
+      { store: storeId },
+      { $setOnInsert: { storeName: store?.name || 'My Store' } },
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
+    )
   )
 }
 
-// Public: nothing in here is secret, and the storefront needs it
+// What the storefront gets: the live design, never the unpublished draft.
+// preview: the shop's owner looking at the builder's preview gets the draft
+// applied instead, so they see their changes before customers do.
+export function storefrontSettings(settings, { preview = false } = {}) {
+  const out = typeof settings.toObject === 'function' ? settings.toObject() : { ...settings }
+  const draft = out.draft
+  delete out.draft
+  out.homeSections = liveSections(out)
+  if (preview && draft) {
+    if (draft.theme) out.theme = { ...out.theme, ...draft.theme }
+    if (Array.isArray(draft.homeSections)) out.homeSections = draft.homeSections
+    out.isPreview = true
+  }
+  return out
+}
+
+// Public: nothing in here is secret, and the storefront needs it.
+// ?preview=1 from the shop's owner shows the builder draft.
 export const getSettings = async (req, res) => {
   try {
     const settings = await getStoreSettings(req.store)
-    res.json(settings)
+    const preview = req.query?.preview === '1' && canManageStore(req.user, req.store)
+    res.json(storefrontSettings(settings, { preview }))
   } catch (error) {
     res.status(500).json({ message: error.message })
   }
@@ -188,8 +211,111 @@ export const updateSettings = async (req, res) => {
     }
 
     const saved = await settings.save()
-    res.json(saved)
+    res.json(storefrontSettings(saved))
   } catch (error) {
     res.status(400).json({ message: error.message })
+  }
+}
+// ---------- the builder's draft ----------
+// The builder saves here as the merchant works. Nothing changes for customers
+// until they press "Publish changes".
+
+const THEME_FIELDS = ['template', 'brandColor', 'headingFont', 'bodyFont', 'radius']
+
+// The design being edited: the draft if there is one, otherwise the live design
+function designOf(settings) {
+  const live = {
+    theme: Object.fromEntries(THEME_FIELDS.map((f) => [f, settings.theme?.[f] ?? ''])),
+    homeSections: liveSections(settings.toObject ? settings.toObject() : settings),
+  }
+  const draft = settings.draft
+  if (!draft) return { ...live, hasDraft: false }
+  return {
+    theme: { ...live.theme, ...(draft.theme || {}) },
+    homeSections: Array.isArray(draft.homeSections) ? draft.homeSections : live.homeSections,
+    hasDraft: true,
+    draftUpdatedAt: draft.updatedAt || null,
+  }
+}
+
+// GET /api/settings/draft  (admin)
+export const getDraft = async (req, res) => {
+  try {
+    res.json(designOf(await getStoreSettings(req.store)))
+  } catch (error) {
+    console.error('getDraft error:', error)
+    res.status(500).json({ message: 'Something went wrong' })
+  }
+}
+
+// Checks a design from the browser: { theme?, homeSections? }
+export function cleanDesign(body, current) {
+  const next = { theme: current.theme, homeSections: current.homeSections }
+  if (body.theme !== undefined) {
+    if (!body.theme || typeof body.theme !== 'object') throw new SectionError('Theme must be an object')
+    next.theme = { ...current.theme, ...cleanTheme(body.theme) }
+  }
+  if (body.homeSections !== undefined) next.homeSections = cleanSections(body.homeSections)
+  return next
+}
+
+// PUT /api/settings/draft  { theme?, homeSections? }  (admin)
+export const saveDraft = async (req, res) => {
+  try {
+    const settings = await getStoreSettings(req.store)
+    let next
+    try {
+      next = cleanDesign(req.body || {}, designOf(settings))
+    } catch (error) {
+      if (error instanceof SectionError || error.message) return res.status(400).json({ message: error.message })
+      throw error
+    }
+    settings.draft = { theme: next.theme, homeSections: next.homeSections, updatedAt: new Date() }
+    settings.markModified?.('draft')
+    await settings.save()
+    res.json(designOf(settings))
+  } catch (error) {
+    console.error('saveDraft error:', error)
+    res.status(500).json({ message: 'Something went wrong' })
+  }
+}
+
+// POST /api/settings/draft/publish  (admin): the draft becomes what customers see
+export const publishDraft = async (req, res) => {
+  try {
+    const settings = await getStoreSettings(req.store)
+    if (!settings.draft) return res.status(400).json({ message: 'There are no changes to publish' })
+    const design = designOf(settings)
+    // Checked again: the rules may have changed since it was saved
+    let clean
+    try {
+      clean = { theme: cleanTheme(design.theme), homeSections: cleanSections(design.homeSections) }
+    } catch (error) {
+      return res.status(400).json({ message: error.message })
+    }
+    for (const [field, value] of Object.entries(clean.theme)) settings.theme[field] = value
+    settings.homeSections = clean.homeSections
+    settings.draft = null
+    settings.markModified?.('homeSections')
+    settings.markModified?.('draft')
+    await settings.save()
+    res.json({ ...designOf(settings), settings: storefrontSettings(settings) })
+  } catch (error) {
+    console.error('publishDraft error:', error)
+    res.status(500).json({ message: 'Something went wrong' })
+  }
+}
+
+// DELETE /api/settings/draft  (admin): throw the unpublished changes away
+export const discardDraft = async (req, res) => {
+  try {
+    const settings = await getStoreSettings(req.store)
+    settings.draft = null
+    settings.markModified?.('draft')
+    await settings.save()
+    res.json(designOf(settings))
+  } catch (error) {
+    console.error('discardDraft error:', error)
+    res.status(500).json({ message: 'Something went wrong' })
   }
 }

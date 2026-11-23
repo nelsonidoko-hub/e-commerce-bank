@@ -1,3 +1,5 @@
+import { planFor } from './plans.js'
+
 // A shop's public web address, for payment return links and emails.
 //   1. its own verified domain              https://amaka.com
 //   2. its address on the platform          https://amaka.yourplatform.com
@@ -6,7 +8,7 @@
 export function storeUrl(store, path = '/') {
   const p = path.startsWith('/') ? path : `/${path}`
 
-  if (store?.customDomain && store.customDomainVerified) {
+  if (store?.customDomain && store.customDomainVerified && planFor(store).customDomain) {
     return `https://${store.customDomain}${p}`
   }
 

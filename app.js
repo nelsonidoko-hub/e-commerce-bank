@@ -14,6 +14,13 @@ import discountRoutes from './routes/discountRoutes.js'
 import pageRoutes from './routes/pageRoutes.js'
 import paymentSettingsRoutes from './routes/paymentSettingsRoutes.js'
 import storeRoutes from './routes/storeRoutes.js'
+import platformRoutes from './routes/platformRoutes.js'
+import designRoutes from './routes/designRoutes.js'
+import billingRoutes from './routes/billingRoutes.js'
+import { marketRouter, marketSettingsRouter } from './routes/marketRoutes.js'
+import founderRoutes from './routes/founderRoutes.js'
+import domainRoutes from './routes/domainRoutes.js'
+import { billingWebhook } from './controllers/billingController.js'
 import { paystackWebhook } from './controllers/paymentController.js'
 import { resolveStore, storeOpen } from './middleware/storeMiddleware.js'
 
@@ -37,6 +44,15 @@ export function createApp() {
   // Paystack's servers call this. The address names the shop
   // (/api/payments/webhook/<storeId>), so it comes before the shop lookup.
   app.post('/api/payments/webhook/:storeId', paystackWebhook)
+  // Paystack → the platform's own account (merchants paying for their plan)
+  app.post('/api/billing/webhook', billingWebhook)
+
+  // The platform's own site: templates, sign-up, a merchant's shops.
+  // Not for any one shop, so before the shop lookup.
+  app.use('/api/platform', platformRoutes)
+  // The founder dashboard (platform owner only)
+  app.use('/api/founder', founderRoutes)
+  app.use('/api/market', marketRouter)
 
   // Everything else is for one shop: work out which (req.store), then hide it
   // from visitors if it isn't live. See middleware/storeMiddleware.js.
@@ -55,6 +71,10 @@ export function createApp() {
   app.use('/api/discounts', discountRoutes)
   app.use('/api/pages', pageRoutes)
   app.use('/api/payment-settings', paymentSettingsRoutes)
+  app.use('/api/designs', designRoutes)
+  app.use('/api/billing', billingRoutes)
+  app.use('/api/domain', domainRoutes)
+  app.use('/api/market-settings', marketSettingsRouter)
 
   // Catch-all so errors come back as JSON and never expose a stack trace
   app.use((err, req, res, next) => {

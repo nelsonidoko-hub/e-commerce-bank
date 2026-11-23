@@ -60,3 +60,21 @@ export const admin = (req, res, next) => {
     res.status(403).json({ message: 'Not authorized as admin' })
   }
 }
+
+// Who is looking, if they sent a valid login; never refuses the request.
+// Used where visitors and owners both call the same address (e.g. preview).
+export const optionalLogin = async (req, res, next) => {
+  const header = req.headers.authorization
+  if (header?.startsWith('Bearer ')) {
+    try {
+      const decoded = jwt.verify(header.split(' ')[1], process.env.JWT_SECRET, { algorithms: ['HS256'] })
+      const user = await User.findById(decoded.id).select('_id store role passwordChangedAt')
+      const stale = user?.passwordChangedAt && decoded.iat < Math.floor(user.passwordChangedAt.getTime() / 1000)
+      const wrongShop = user?.store && String(user.store) !== String(req.store?._id)
+      if (user && !stale && !wrongShop) req.user = user
+    } catch {
+      // treat as a visitor
+    }
+  }
+  next()
+}

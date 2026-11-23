@@ -37,6 +37,11 @@ export const createOrder = async (req, res) => {
   try {
     const { items, shippingAddress, deliveryMethod } = req.body
 
+    // Template demos show the whole shop but never take real orders
+    if (req.store.isDemo) {
+      return res.status(400).json({ message: 'This is a demo shop, so orders are switched off.', code: 'DEMO_SHOP' })
+    }
+
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: 'Your cart is empty' })
     }

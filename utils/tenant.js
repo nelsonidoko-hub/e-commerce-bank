@@ -41,9 +41,11 @@ function namesAStore(value) {
   return false
 }
 
-export function tenantPlugin(schema) {
+// options.storeIndex = false when the model declares its own index on store
+// (Settings: one per shop), so the index isn't defined twice.
+export function tenantPlugin(schema, options = {}) {
   schema.add({
-    store: { type: mongoose.Schema.Types.ObjectId, ref: 'Store', required: true, index: true, immutable: true },
+    store: { type: mongoose.Schema.Types.ObjectId, ref: 'Store', required: true, index: options.storeIndex !== false, immutable: true },
   })
 
   schema.pre(QUERY_OPS, function () {
@@ -96,4 +98,17 @@ export function cleanBody(body) {
 export function byId(req, id = req.params.id) {
   const safe = mongoose.isValidObjectId(id) ? id : new mongoose.Types.ObjectId()
   return { _id: safe, store: req.store._id }
+}
+
+// "Create it if it isn't there" (an upsert) can still fail when two requests
+// do it at the same moment for a brand-new shop: both see nothing, both try
+// to create, and the database refuses the second as a duplicate. The first
+// one succeeded, so trying again simply finds it.
+export async function upsertSafely(run) {
+  try {
+    return await run()
+  } catch (error) {
+    if (error?.code !== 11000) throw error
+    return run()
+  }
 }

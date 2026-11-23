@@ -7,6 +7,7 @@
 //   GRACE_DAYS            days a shop stays live after a
 //                         missed payment                       (default 7)
 //   BASIC_PRODUCT_LIMIT   most products a Basic shop can have  (default 100)
+//   MAX_SHOPS_PER_MERCHANT how many shops one merchant can own (default 5)
 //
 // Values are read every time they are needed, so a change on Render applies as
 // soon as the server restarts with it. A bad value (empty, negative, "abc")
@@ -18,6 +19,7 @@ const DEFAULTS = {
   TRIAL_DAYS: 7,
   GRACE_DAYS: 7,
   BASIC_PRODUCT_LIMIT: 100,
+  MAX_SHOPS_PER_MERCHANT: 5,
 }
 
 // Sensible ceilings, so a typo like 70000 trial days can't give shops away
@@ -27,6 +29,7 @@ const MAXIMUMS = {
   TRIAL_DAYS: 90,
   GRACE_DAYS: 60,
   BASIC_PRODUCT_LIMIT: 1_000_000,
+  MAX_SHOPS_PER_MERCHANT: 100,
 }
 
 const warned = new Set()

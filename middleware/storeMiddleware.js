@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken'
 import Store from '../models/Store.js'
 import User from '../models/User.js'
 import { storeState, canManageStore } from '../utils/storeAccess.js'
+import { planFor } from '../utils/plans.js'
 
 // Works out which shop a request is for, and puts it on req.store.
 //
@@ -59,7 +60,8 @@ export async function findStore({ host, slug }) {
     } else if (h !== domain && !/^(localhost|127\.0\.0\.1)$/.test(h) && !h.endsWith('.vercel.app') && !h.endsWith('.onrender.com')) {
       // Anything else is a merchant's own domain, used once verified
       const store = await lookup(`d:${h}`, { customDomain: h.replace(/^www\./, '') })
-      return store?.customDomainVerified ? store : null
+      // only verified, and only while the shop is on a plan that includes it
+      return store?.customDomainVerified && planFor(store).customDomain ? store : null
     }
   }
 
@@ -105,7 +107,7 @@ async function optionalUser(req) {
 // Routes that must keep working while a shop is offline, so its owner can
 // still sign in to preview, pay and publish.
 const ALWAYS_OPEN = [
-  /^\/api\/users\/(login|forgot-password|reset-password)$/,
+  /^\/api\/users\/(login|forgot-password|reset-password|exchange-code)$/,
   /^\/api\/store\/status$/,
 ]
 

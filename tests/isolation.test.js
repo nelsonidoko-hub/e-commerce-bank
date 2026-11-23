@@ -510,7 +510,8 @@ await check('the expiry timer works across shops on purpose, and restores the ri
 // ---------- 11. addresses ----------
 await check('shop addresses', () => {
   assert.equal(storeUrl({ slug: 'amaka' }, '/orders/1'), 'https://amaka.shopsy.ng/orders/1')
-  assert.equal(storeUrl({ slug: 'bola', customDomain: 'bola.com', customDomainVerified: true }), 'https://bola.com/')
+  assert.equal(storeUrl({ slug: 'bola', plan: 'pro', customDomain: 'bola.com', customDomainVerified: true }), 'https://bola.com/')
+  assert.equal(storeUrl({ slug: 'bola', plan: 'basic', customDomain: 'bola.com', customDomainVerified: true }), 'https://bola.shopsy.ng/', 'own domain is Pro only')
   const saved = process.env.PLATFORM_DOMAIN
   delete process.env.PLATFORM_DOMAIN
   process.env.FRONTEND_URL = 'http://localhost:5173'

@@ -20,6 +20,8 @@ const categorySchema = new mongoose.Schema(
     // null/omitted = top-level category (e.g. "accessories")
     // set = this is a subcategory under that parent's "name"
     // (e.g. parent: "accessories" for "sunglasses")
+    // Starter category added at sign-up
+    isSample: { type: Boolean, default: false },
     parent: {
       type: String,
       default: null,

@@ -3,6 +3,7 @@
 //
 //   node scripts/createStore.js --name "Amaka Styles" --slug amaka \
 //     --email amaka@example.com --password "a-long-password" [--plan pro] [--publish]
+//     [--template fresh] [--no-samples]
 //
 // --publish makes it live straight away with the free trial (TRIAL_DAYS).
 // Without it the shop is a draft: only the owner can see it.
@@ -10,10 +11,8 @@
 // --password is ignored.
 import dotenv from 'dotenv'
 import mongoose from 'mongoose'
-import Store from '../models/Store.js'
 import User from '../models/User.js'
-import { getStoreSettings } from '../controllers/settingsController.js'
-import { trialDays } from '../utils/plans.js'
+import { createShop } from '../utils/createShop.js'
 import { storeUrl } from '../utils/storeUrl.js'
 
 dotenv.config()
@@ -31,33 +30,17 @@ function args() {
   return out
 }
 
-export async function createStore({ name, slug, email, password, plan = 'basic', publish = false }) {
-  if (!name || !slug || !email) throw new Error('--name, --slug and --email are required')
+export async function createStore({ name, slug, email, password, plan = 'basic', publish = false, template = 'classic', samples = true }) {
+  if (!name || !email) throw new Error('--name and --email are required')
   email = String(email).trim().toLowerCase()
-  slug = String(slug).trim().toLowerCase()
-
-  if (await Store.exists({ slug })) throw new Error(`The address "${slug}" is already taken`)
 
   let owner = await User.findOne({ store: null, email })
   if (!owner) {
     if (!password || String(password).length < 8) throw new Error('--password (8+ characters) is required for a new account')
-    owner = await User.create({ store: null, role: 'merchant', name: name, email, password: String(password) })
-  } else if (owner.role === 'customer') {
-    throw new Error('That platform account cannot own shops')
+    owner = await User.create({ store: null, role: 'merchant', name, email, password: String(password) })
   }
 
-  const now = new Date()
-  const store = await Store.create({
-    name,
-    slug,
-    owner: owner._id,
-    notifyEmail: email,
-    plan,
-    publishedAt: publish ? now : null,
-    trialEndsAt: publish ? new Date(now.getTime() + trialDays() * 24 * 60 * 60 * 1000) : null,
-  })
-
-  await getStoreSettings(store)
+  const store = await createShop({ owner, name, slug, template, plan, publish, samples })
   return { store, owner }
 }
 
@@ -73,6 +56,8 @@ if (process.argv[1]?.endsWith('createStore.js')) {
       password: a.password,
       plan: a.plan === 'pro' ? 'pro' : 'basic',
       publish: Boolean(a.publish),
+      template: a.template || 'classic',
+      samples: !a['no-samples'],
     })
     console.log(`Created "${store.name}" for ${owner.email}`)
     console.log(`  Address: ${storeUrl(store)}`)

@@ -53,3 +53,12 @@ export const paymentSettingsLimiter = makeLimiter(
   'Too many attempts. Please try again in an hour.',
   { skipSuccessfulRequests: true }
 )
+// Checking whether a shop address is free, while the merchant types
+export const slugCheckLimiter = makeLimiter(1, 60, 'Too many checks. Please slow down.')
+
+// Opening a new shop: a few per hour per visitor is plenty
+export const shopCreateLimiter = makeLimiter(60, 10, 'Too many new shops from here. Please try again later.')
+
+// Market Square: counting clicks and reporting listings
+export const marketClickLimiter = makeLimiter(1, 60, 'Too many requests. Please slow down.')
+export const marketReportLimiter = makeLimiter(60, 10, 'Too many reports from here. Please try again later.')

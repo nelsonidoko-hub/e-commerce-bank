@@ -48,12 +48,45 @@ const storeSchema = new mongoose.Schema(
     // Paid up until this moment. Billing (Phase 4) moves it forward each month.
     currentPeriodEnd: { type: Date, default: null },
     // Platform owner switched the shop off (abuse, fraud). Overrides everything.
+    // Paying the platform (see utils/billing.js)
+    billing: {
+      // charge the saved card each month
+      autoRenew: { type: Boolean, default: true },
+      // Paystack's reusable card token, encrypted; only works with the platform's key
+      authorizationEnc: { type: String, default: '' },
+      cardLast4: { type: String, default: '' },
+      cardBrand: { type: String, default: '' },
+      email: { type: String, default: '' },
+      // a downgrade waiting for the next renewal
+      nextPlan: { type: String, enum: ['basic', 'pro', null], default: null },
+      lastAttemptAt: { type: Date, default: null },
+      failedAttempts: { type: Number, default: 0 },
+      // which reminder emails were sent, so none is sent twice: { 'trial-3:<date>': true }
+      reminders: { type: mongoose.Schema.Types.Mixed, default: {} },
+    },
+
+    // Market Square (utils/market.js): the merchant opts in; the founder can hide
+    market: {
+      listed: { type: Boolean, default: false },
+      category: { type: String, default: '' },
+      city: { type: String, trim: true, maxlength: 40, default: '' },
+      hidden: { type: Boolean, default: false },
+      hiddenReason: { type: String, default: '' },
+    },
+
+    // A template demo run by the platform: always open, never takes real orders
+    isDemo: { type: Boolean, default: false },
     suspended: { type: Boolean, default: false },
     suspendedReason: { type: String, default: '' },
 
     // The merchant's own web address (Pro). Only used once verified.
     customDomain: { type: String, trim: true, lowercase: true, default: undefined },
     customDomainVerified: { type: Boolean, default: false },
+    // Proof of ownership: a TXT record at _shopverify.<domain> with this value
+    customDomainToken: { type: String, default: '' },
+    // Whether the hosting (Vercel) knows about the domain: '' | added | manual | error
+    customDomainHosting: { type: String, default: '' },
+    customDomainError: { type: String, default: '' },
   },
   { timestamps: true }
 )

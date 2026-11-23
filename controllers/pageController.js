@@ -1,5 +1,5 @@
 import Page from '../models/Page.js'
-import { inStore, byId } from '../utils/tenant.js'
+import { inStore, byId, upsertSafely } from '../utils/tenant.js'
 import { DEFAULT_PAGES } from '../utils/defaultPages.js'
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
@@ -19,10 +19,14 @@ async function ensureDefaultPages(req) {
   if (count > 0) return
 
   for (const page of DEFAULT_PAGES) {
-    await Page.findOneAndUpdate(
-      inStore(req, { slug: page.slug }),
-      { $setOnInsert: page },
-      { upsert: true, setDefaultsOnInsert: true }
+    // Two requests can arrive together for a new shop (footer + page)
+    await upsertSafely(() =>
+      Page.findOneAndUpdate(
+        inStore(req, { slug: page.slug }),
+        // slug comes from the filter on insert, so it isn't repeated here
+        { $setOnInsert: (({ slug, ...rest }) => rest)(page) },
+        { upsert: true, setDefaultsOnInsert: true }
+      )
     )
   }
 }

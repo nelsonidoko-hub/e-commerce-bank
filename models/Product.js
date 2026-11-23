@@ -21,6 +21,8 @@ const productSchema = new mongoose.Schema(
       },
     ],
     description: { type: String, default: '' },
+    // Starter product added at sign-up; removed in one click before publishing
+    isSample: { type: Boolean, default: false },
   },
   { timestamps: true }
 )

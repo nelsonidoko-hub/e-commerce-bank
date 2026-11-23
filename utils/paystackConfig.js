@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import PaymentConfig from '../models/PaymentConfig.js'
 import { decrypt, encryptionReady } from '../config/secretBox.js'
+import { upsertSafely } from './tenant.js'
 
 // Read when used (not at load) because dotenv runs after imports.
 // PAYSTACK_API_URL only exists so tests can point at a fake Paystack.
@@ -32,10 +33,12 @@ export const clearPaystackCache = (storeId) => {
 
 export function getPaymentConfig(storeId) {
   if (!storeId) throw new Error('getPaymentConfig needs a store')
-  return PaymentConfig.findOneAndUpdate(
-    { store: storeId, key: 'paystack' },
-    { $setOnInsert: { key: 'paystack' } },
-    { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
+  return upsertSafely(() =>
+    PaymentConfig.findOneAndUpdate(
+      { store: storeId, key: 'paystack' },
+      { $setOnInsert: { mode: 'test' } },
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
+    )
   )
 }
 

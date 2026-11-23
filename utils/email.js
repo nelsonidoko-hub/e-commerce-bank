@@ -293,3 +293,70 @@ export async function notifyAdminPaymentKeysChanged({ store: shop, by, changes }
     ),
   })
 }
+// ---------- billing: from the platform to the merchant ----------
+// These come from the platform itself (PLATFORM_NAME), not from the shop.
+
+const platformName = () => process.env.PLATFORM_NAME || 'ShopBuilder'
+const day = (d) => new Date(d).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })
+
+export async function sendBillingEmail(store, type, extra = {}) {
+  const to = store.billing?.email || store.notifyEmail
+  if (!to) return
+  const billingUrl = storeUrl(store, '/admin/billing')
+  const button = (label) =>
+    `<p><a href="${esc(billingUrl)}" style="background:#111;color:#fff;padding:10px 18px;text-decoration:none;border-radius:6px;display:inline-block">${esc(label)}</a></p>`
+  const shop = `<b>${esc(store.name)}</b>`
+
+  const messages = {
+    receipt: () => {
+      const p = extra.payment || {}
+      const what = p.kind === 'upgrade' ? 'Upgrade to Pro' : `${p.plan === 'pro' ? 'Pro' : 'Basic'} plan, 1 month`
+      return {
+        subject: `Receipt: ${naira(p.amount)} for ${store.name}`,
+        heading: 'Thank you for your payment',
+        body: `<p>We received ${naira(p.amount)} for ${shop}.</p>
+          <table style="width:100%;border-collapse:collapse;margin:12px 0">
+            <tr><td style="padding:4px 0;color:#666">For</td><td style="text-align:right">${esc(what)}</td></tr>
+            <tr><td style="padding:4px 0;color:#666">Reference</td><td style="text-align:right">${esc(p.reference || '')}</td></tr>
+            ${p.periodEnd ? `<tr><td style="padding:4px 0;color:#666">Paid until</td><td style="text-align:right">${day(p.periodEnd)}</td></tr>` : ''}
+          </table>${button('View billing')}`,
+      }
+    },
+    'trial-ending': () => ({
+      subject: `Your free trial ends in ${extra.daysLeft} day${extra.daysLeft === 1 ? '' : 's'}`,
+      heading: 'Keep your shop open',
+      body: `<p>The free trial for ${shop} ends on <b>${day(extra.until)}</b>. Choose a plan to keep it open for your customers.</p>${button('Choose a plan')}`,
+    }),
+    'payment-failed': () => ({
+      subject: `Payment failed for ${store.name}`,
+      heading: "We couldn't renew your plan",
+      body: `<p>We tried to charge your card for ${shop} but the payment didn't go through.</p>
+        <p>Your shop stays open${extra.until ? ` until <b>${day(extra.until)}</b>` : ''}. We'll try again tomorrow, or you can pay now with any card.</p>${button('Pay now')}`,
+    }),
+    paused: () => ({
+      subject: `${store.name} is paused`,
+      heading: 'Your shop is paused',
+      body: `<p>${shop} is hidden from customers because the plan has ended. Nothing has been deleted: your products, orders and design are all safe.</p>
+        <p>Pay for a plan and it opens again straight away.</p>${button('Reopen my shop')}`,
+    }),
+  }
+  const m = messages[type]?.()
+  if (!m) return
+  await sendEmail({ to, subject: m.subject, html: layout(m.heading, m.body, platformName()), storeName: platformName() })
+}
+
+// A merchant resetting their platform password (from the platform site)
+export async function sendPlatformPasswordReset(user, resetUrl) {
+  await sendEmail({
+    to: user.email,
+    storeName: platformName(),
+    subject: `Reset your ${platformName()} password`,
+    html: layout(
+      'Reset your password',
+      `<p>Hi ${esc(user.name)}, click below to set a new password. This link expires in 30 minutes.</p>
+       <p><a href="${esc(resetUrl)}" style="background:#111;color:#fff;padding:10px 18px;text-decoration:none;border-radius:6px;display:inline-block">Reset password</a></p>
+       <p style="color:#888;font-size:13px">If you did not request this, you can ignore this email.</p>`,
+      platformName()
+    ),
+  })
+}

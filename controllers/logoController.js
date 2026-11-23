@@ -1,16 +1,13 @@
 import Logo from '../models/Logo.js'
-import { inStore } from '../utils/tenant.js'
+import { inStore, upsertSafely } from '../utils/tenant.js'
 
 // Get the store logo
 export const getLogo = async (req, res) => {
   try {
     const logo = await Logo.findOne(inStore(req, { name: 'main' }))
 
-    if (!logo) {
-      return res.status(404).json({ message: 'Logo not found' })
-    }
-
-    res.json(logo)
+    // No logo yet is normal for a new shop, not an error
+    res.json(logo || null)
   } catch (error) {
     res.status(500).json({ message: error.message })
   }
@@ -101,24 +98,23 @@ export const saveLogo = async (req, res) => {
       })
     }
 
-    const logo = await Logo.findOneAndUpdate(
-      inStore(req, { name: 'main' }),
-      {
-        $set: {
-          imageUrl: imageUrl.trim(),
-          altText: altText?.trim() || `${req.store.name} logo`,
-          updatedBy: req.user?._id || null,
+    const logo = await upsertSafely(() =>
+      Logo.findOneAndUpdate(
+        inStore(req, { name: 'main' }),
+        {
+          $set: {
+            imageUrl: imageUrl.trim(),
+            altText: altText?.trim() || `${req.store.name} logo`,
+            updatedBy: req.user?._id || null,
+          },
         },
-        $setOnInsert: {
-          name: 'main',
-        },
-      },
-      {
-        returnDocument: 'after',
-        upsert: true,
-        runValidators: true,
-        setDefaultsOnInsert: true,
-      }
+        {
+          returnDocument: 'after',
+          upsert: true,
+          runValidators: true,
+          setDefaultsOnInsert: true,
+        }
+      )
     )
 
     res.json(logo)

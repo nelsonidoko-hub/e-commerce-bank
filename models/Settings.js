@@ -106,6 +106,15 @@ const settingsSchema = new mongoose.Schema(
     },
 
     // Opening hours (Admin → Settings). Off by default, so the shop is always open.
+    // The homepage, as an ordered list of sections (see utils/sections.js).
+    // Empty for shops made before the builder: their old blocks above are
+    // turned into sections when read.
+    homeSections: { type: [mongoose.Schema.Types.Mixed], default: undefined },
+
+    // Builder changes not published yet: { theme, homeSections, updatedAt }.
+    // Customers never see it; the owner sees it in the builder's preview.
+    draft: { type: mongoose.Schema.Types.Mixed, default: null },
+
     hours: {
       enabled: { type: Boolean, default: false },
       timezone: str('Africa/Lagos'),
@@ -118,7 +127,7 @@ const settingsSchema = new mongoose.Schema(
 )
 
 // Belongs to one shop, and every query must say which (see utils/tenant.js)
-settingsSchema.plugin(tenantPlugin)
+settingsSchema.plugin(tenantPlugin, { storeIndex: false })
 // Exactly one settings document per shop
 settingsSchema.index({ store: 1 }, { unique: true })
 const Settings = mongoose.model('Settings', settingsSchema)

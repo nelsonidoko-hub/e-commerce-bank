@@ -34,6 +34,14 @@ const userSchema = new mongoose.Schema(
     // Set whenever the password changes. Login tokens issued before this
     // moment stop working, so a reset signs out anyone who had the old password.
     passwordChangedAt: Date,
+    // Merchants: when they accepted the platform's terms at sign-up
+    termsAcceptedAt: Date,
+    // One-time code that signs a merchant into a shop's admin after they
+    // choose it on the platform site (shops live on other web addresses, so
+    // the login can't simply be shared). Hashed, single use, 2 minutes.
+    loginCodeHash: String,
+    loginCodeExpires: Date,
+    loginCodeStore: { type: mongoose.Schema.Types.ObjectId, ref: 'Store' },
   },
   { timestamps: true }
 )

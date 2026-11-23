@@ -2,6 +2,8 @@ import dotenv from 'dotenv'
 import mongoose from 'mongoose'
 import { createApp } from './app.js'
 import { startOrderExpiryJob } from './utils/expireOrders.js'
+import { fixOldIndexes } from './utils/fixIndexes.js'
+import { startBillingJob } from './utils/billing.js'
 
 dotenv.config()
 
@@ -22,9 +24,12 @@ const app = createApp()
 
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => {
+  .then(async () => {
     console.log('MongoDB connected')
+    // Clear out rules left by the single-store version (see utils/fixIndexes.js)
+    await fixOldIndexes().catch((e) => console.error('Index check failed:', e.message))
     startOrderExpiryJob()
+    startBillingJob()
   })
   .catch((err) => console.error('MongoDB connection error:', err))
 

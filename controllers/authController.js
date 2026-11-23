@@ -190,3 +190,27 @@ export const resetPassword = async (req, res) => {
     serverError(res, error, 'resetPassword')
   }
 }
+// POST /api/users/exchange-code  { code }
+// Swaps the one-time code from the platform site ("Open admin") for a normal
+// login on this shop. Works once, within 2 minutes, only on the shop it was
+// made for, and only for someone who runs that shop.
+export const exchangeCode = async (req, res) => {
+  try {
+    const code = isString(req.body.code) ? req.body.code : ''
+    if (!code || code.length > 100) return res.status(400).json({ message: 'This sign-in link is invalid or has expired' })
+
+    const hash = crypto.createHash('sha256').update(code).digest('hex')
+    // Claimed and cleared in one step, so the same code can never be used twice
+    const user = await User.findOneAndUpdate(
+      { store: null, loginCodeHash: hash, loginCodeExpires: { $gt: new Date() }, loginCodeStore: req.store._id },
+      { $unset: { loginCodeHash: 1, loginCodeExpires: 1, loginCodeStore: 1 } },
+      { returnDocument: 'after' }
+    )
+    if (!user || !canManageStore(user, req.store)) {
+      return res.status(400).json({ message: 'This sign-in link is invalid or has expired' })
+    }
+    res.json(userResponse(user, req.store))
+  } catch (error) {
+    serverError(res, error, 'exchangeCode')
+  }
+}
