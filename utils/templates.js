@@ -1,4 +1,5 @@
 import StudioTemplate from '../models/StudioTemplate.js'
+import { SAMPLE_PRODUCT_NAMES } from './sampleData.js'
 
 // Every template a shop can wear: the 8 built into the code, plus the ones
 // made in the Template Studio (stored in the database as a "recipe").
@@ -76,14 +77,39 @@ export function cleanRecipe(input) {
   }
 }
 
+// Real photos: only web addresses (https), only for known picture slots and
+// the sample products of the chosen set
+const photoUrl = (value) => {
+  const v = typeof value === 'string' ? value.trim() : ''
+  if (!v) return ''
+  try {
+    const url = new URL(v)
+    if (url.protocol !== 'https:' || v.length > 600) throw new Error()
+    return url.href
+  } catch {
+    throw new TemplateError("A picture address isn't valid. Upload the picture again.")
+  }
+}
+export function cleanPictures(input, sampleSet) {
+  const p = input && typeof input === 'object' ? input : {}
+  const out = { hero: photoUrl(p.hero), banner: photoUrl(p.banner), featured: photoUrl(p.featured), products: {} }
+  const names = SAMPLE_PRODUCT_NAMES[sampleSet] || []
+  for (const [name, url] of Object.entries(p.products && typeof p.products === 'object' ? p.products : {})) {
+    if (names.includes(name) && photoUrl(url)) out.products[name] = photoUrl(url)
+  }
+  return out
+}
+
 // ---------- the in-memory copy of Studio templates ----------
-let cache = new Map() // key -> { key, label, status, recipe, sampleSet }
+let cache = new Map() // key -> new Studio templates { key, label, status, recipe, sampleSet, pictures }
+let edits = new Map() // built-in id -> its published edited version
 let loadedAt = 0
 const MAX_AGE = 60 * 1000
 
 export async function refreshTemplates() {
-  const all = await StudioTemplate.find({}).select('key label bestFor description status recipe sampleSet').lean()
-  cache = new Map(all.map((t) => [t.key, t]))
+  const all = await StudioTemplate.find({}).select('key label bestFor description status recipe sampleSet pictures builtIn').lean()
+  cache = new Map(all.filter((t) => !t.builtIn).map((t) => [t.key, t]))
+  edits = new Map(all.filter((t) => t.builtIn && t.status === 'published').map((t) => [t.builtIn, t]))
   loadedAt = Date.now()
   return cache
 }
@@ -94,21 +120,34 @@ export async function freshTemplates() {
 }
 export function forgetTemplates() {
   cache = new Map()
+  edits = new Map()
   loadedAt = 0
 }
 
+const isBuiltIn = (id) => BUILTIN_TEMPLATES.includes(id)
 const studio = (id) => cache.get(id)
 export const studioStatus = (id) => studio(id)?.status || ''
 // Can a merchant choose this template now? (built-in, or published in the Studio)
-export const isSelectableTemplate = (id) => BUILTIN_TEMPLATES.includes(id) || studio(id)?.status === 'published'
+export const isSelectableTemplate = (id) => isBuiltIn(id) || studio(id)?.status === 'published'
 // Does it exist at all? (shops keep a hidden template they already use)
-export const isKnownTemplate = (id) => BUILTIN_TEMPLATES.includes(id) || cache.has(id)
-// The recipe a storefront needs for a Studio template (null for built-ins)
-export const recipeFor = (id) => (BUILTIN_TEMPLATES.includes(id) ? null : studio(id)?.recipe || null)
+export const isKnownTemplate = (id) => isBuiltIn(id) || cache.has(id)
+// The recipe a storefront needs: a Studio template's, or a built-in's edited
+// version. null = use the look in the frontend code.
+export const recipeFor = (id) => (isBuiltIn(id) ? edits.get(id)?.recipe || null : studio(id)?.recipe || null)
 // Which starter products to use
-export const sampleSetFor = (id) => (BUILTIN_TEMPLATES.includes(id) ? id : SAMPLE_SETS[studio(id)?.sampleSet] ? studio(id).sampleSet : 'classic')
-// Published Studio templates for the gallery
-export const publishedStudioTemplates = () =>
-  [...cache.values()]
-    .filter((t) => t.status === 'published')
-    .map((t) => ({ id: t.key, label: t.label, bestFor: t.bestFor, description: t.description, sampleSet: t.sampleSet, recipe: t.recipe }))
+export const sampleSetFor = (id) => {
+  const t = isBuiltIn(id) ? edits.get(id) : studio(id)
+  if (t && SAMPLE_SETS[t.sampleSet]) return t.sampleSet
+  return isBuiltIn(id) ? id : 'classic'
+}
+// Real photos for new shops (null = drawn pictures)
+export const picturesFor = (id) => (isBuiltIn(id) ? edits.get(id)?.pictures : studio(id)?.pictures) || null
+
+// For the gallery: new published templates, plus edited built-ins (builtIn set)
+export const publishedStudioTemplates = () => {
+  const card = (t, id) => ({ id, label: t.label, bestFor: t.bestFor, description: t.description, sampleSet: t.sampleSet, recipe: t.recipe, pictures: t.pictures || {} })
+  return [
+    ...[...edits.values()].map((t) => ({ ...card(t, t.builtIn), builtIn: t.builtIn })),
+    ...[...cache.values()].filter((t) => t.status === 'published').map((t) => card(t, t.key)),
+  ]
+}

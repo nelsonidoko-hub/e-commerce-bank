@@ -196,10 +196,15 @@ const SETS = {
 }
 
 export const SAMPLE_TEMPLATES = Object.keys(SETS)
+// The sample product names in each set (the Template Studio gives each a photo slot)
+export const SAMPLE_PRODUCT_NAMES = Object.fromEntries(Object.entries(SETS).map(([id, set]) => [id, set.products.map(([name]) => name)]))
 
 // Everything needed to fill a new shop: categories, products, a banner slide
 // and homepage pictures. Plain data; createShop.js saves it.
-export function sampleContent(template, shopName) {
+// pictures: real photos from the Template Studio (optional), used instead of
+// the drawn pictures wherever one is given
+export function sampleContent(template, shopName, pictures = null) {
+  const photo = pictures && typeof pictures === 'object' ? pictures : {}
   const set = SETS[template] || SETS.classic
   const [from, to] = set.colours
 
@@ -211,7 +216,7 @@ export function sampleContent(template, shopName) {
     category,
     sizes,
     description,
-    image: samplePicture(name, from, to),
+    image: photo.products?.[name] || samplePicture(name, from, to),
     hoverImage: '',
     images: [],
     // a couple of items on sale so the sale styling shows
@@ -223,7 +228,7 @@ export function sampleContent(template, shopName) {
   const banner = samplePicture(shopName, to, from, { width: 1600, height: 900 })
   const slide = {
     mediaType: 'image',
-    mediaUrl: banner,
+    mediaUrl: photo.hero || banner,
     heading: `Welcome to ${shopName}`,
     text: 'Fresh picks, fair prices, fast delivery.',
     buttonLabel: 'Shop now',
@@ -235,8 +240,8 @@ export function sampleContent(template, shopName) {
 
   const settings = {
     homeCategoryRow: { enabled: true, title: 'Popular picks', category: set.row },
-    homeBanner: { image: samplePicture('New arrivals', from, to, { width: 1600, height: 700 }) },
-    homeFeatured: { image: samplePicture(shopName, to, from, { width: 900, height: 1100 }), title: 'Featured collection' },
+    homeBanner: { image: photo.banner || samplePicture('New arrivals', from, to, { width: 1600, height: 700 }) },
+    homeFeatured: { image: photo.featured || samplePicture(shopName, to, from, { width: 900, height: 1100 }), title: 'Featured collection' },
     // food shops usually sell for pickup and delivery the same day
     ...(template === 'fresh' ? { pickup: { readyTime: 'Usually ready in 30 to 60 minutes' } } : {}),
   }

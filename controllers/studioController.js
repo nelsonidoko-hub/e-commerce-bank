@@ -1,7 +1,9 @@
 import StudioTemplate from '../models/StudioTemplate.js'
 import Settings from '../models/Settings.js'
 import Store from '../models/Store.js'
-import { cleanKey, cleanRecipe, refreshTemplates, TemplateError, SAMPLE_SETS, PARTS, BUILTIN_TEMPLATES } from '../utils/templates.js'
+import { cleanKey, cleanRecipe, cleanPictures, refreshTemplates, TemplateError, SAMPLE_SETS, PARTS, BUILTIN_TEMPLATES } from '../utils/templates.js'
+import { SAMPLE_PRODUCT_NAMES } from '../utils/sampleData.js'
+import cloudinary from '../config/cloudinary.js'
 import { remakeDemo } from '../scripts/seedDemos.js'
 import { storeUrl } from '../utils/storeUrl.js'
 
@@ -26,6 +28,9 @@ function serverError(res, error, where) {
 
 const text = (value, max) => (typeof value === 'string' ? value.trim().slice(0, max) : '')
 
+// The template id shops store: the built-in's id for an edited built-in
+const templateId = (t) => t.builtIn || t.key
+
 // How many shops (not demos) wear this template right now
 async function shopsUsing(key) {
   const settings = await Settings.find({ 'theme.template': key }).setOptions({ allStores: true }).select('store').lean()
@@ -34,7 +39,7 @@ async function shopsUsing(key) {
 }
 
 async function view(t) {
-  const demo = t.status === 'published' ? await Store.findOne({ slug: `demo-${t.key}` }).select('slug customDomain customDomainVerified').lean() : null
+  const demo = t.status === 'published' ? await Store.findOne({ slug: `demo-${templateId(t)}` }).select('slug customDomain customDomainVerified').lean() : null
   return {
     _id: t._id,
     key: t.key,
@@ -43,18 +48,20 @@ async function view(t) {
     description: t.description,
     sampleSet: t.sampleSet,
     recipe: t.recipe,
+    pictures: t.pictures || {},
+    builtIn: t.builtIn || '',
     status: t.status,
     createdByName: t.createdByName,
     updatedAt: t.updatedAt,
     publishedAt: t.publishedAt,
-    shops: await shopsUsing(t.key),
+    shops: await shopsUsing(templateId(t)),
     demoUrl: demo ? storeUrl(demo) : null,
   }
 }
 
 // GET /api/studio/options -> the parts to choose from
 export const studioOptions = (req, res) => {
-  res.json({ parts: PARTS, sampleSets: SAMPLE_SETS, builtIn: BUILTIN_TEMPLATES, canPublish: isFounder(req.user) })
+  res.json({ parts: PARTS, sampleSets: SAMPLE_SETS, sampleProducts: SAMPLE_PRODUCT_NAMES, builtIn: BUILTIN_TEMPLATES, canPublish: isFounder(req.user) })
 }
 
 // GET /api/studio
@@ -82,15 +89,21 @@ function details(body) {
   const label = text(body.label, 40)
   if (!label) throw new TemplateError('Give the template a name')
   const sampleSet = SAMPLE_SETS[body.sampleSet] ? body.sampleSet : 'classic'
-  return { label, bestFor: text(body.bestFor, 60), description: text(body.description, 240), sampleSet, recipe: cleanRecipe(body.recipe) }
+  return { label, bestFor: text(body.bestFor, 60), description: text(body.description, 240), sampleSet, recipe: cleanRecipe(body.recipe), pictures: cleanPictures(body.pictures, sampleSet) }
 }
 
-// POST /api/studio  { key, label, bestFor, description, sampleSet, recipe }
+// POST /api/studio  { key, label, bestFor, description, sampleSet, recipe, pictures }
+// or, to edit a built-in template: { builtIn: 'fresh', label, ... } (one edited
+// version per built-in)
 export const createStudio = async (req, res) => {
   try {
-    const key = cleanKey(req.body?.key)
+    const builtIn = req.body?.builtIn
+    if (builtIn !== undefined && builtIn !== '' && !BUILTIN_TEMPLATES.includes(builtIn)) return res.status(400).json({ message: 'Unknown built-in template' })
+    if (builtIn && (await StudioTemplate.exists({ builtIn }))) return res.status(400).json({ message: 'This template already has an edited version. Open it from the Studio.' })
+    const key = builtIn ? `builtin-${builtIn}` : cleanKey(req.body?.key)
     const t = await StudioTemplate.create({
       key,
+      builtIn: builtIn || '',
       ...details(req.body || {}),
       createdBy: req.user._id,
       createdByName: req.user.name,
@@ -115,6 +128,7 @@ export const updateStudio = async (req, res) => {
     }
     Object.assign(t, details(req.body || {}), { updatedBy: req.user._id })
     t.markModified('recipe')
+    t.markModified('pictures')
     await t.save()
     await refreshTemplates()
     res.json(await view(t.toObject()))
@@ -135,16 +149,19 @@ export const setStudioStatus = async (req, res) => {
     if (!founderOnly && ['published', 'hidden'].includes(t.status) && !isFounder(req.user)) {
       return res.status(403).json({ message: 'Only the founder can change a published template' })
     }
-    if (next === 'draft' && ['published', 'hidden'].includes(t.status) && (await shopsUsing(t.key)) > 0) {
+    if (!t.builtIn && next === 'draft' && ['published', 'hidden'].includes(t.status) && (await shopsUsing(t.key)) > 0) {
       return res.status(400).json({ message: 'Shops are using this template. Hide it instead.' })
     }
+    const wasPublished = t.status === 'published'
     t.status = next
     if (next === 'published' && !t.publishedAt) t.publishedAt = new Date()
     t.updatedBy = req.user._id
     await t.save()
     await refreshTemplates()
     // A fresh demo shop on every publish, so "View demo" shows the latest
-    if (next === 'published') await remakeDemo(req.user, t.key, `${t.label} demo`)
+    if (next === 'published') await remakeDemo(req.user, templateId(t), `${t.label} demo`)
+    // an edited built-in taken off: its demo goes back to the original look
+    else if (t.builtIn && wasPublished) await remakeDemo(req.user, t.builtIn, `${t.label} demo`)
     res.json(await view(t.toObject()))
   } catch (error) {
     serverError(res, error, 'setStudioStatus')
@@ -156,6 +173,15 @@ export const deleteStudio = async (req, res) => {
   try {
     const t = await StudioTemplate.findById(req.params.id).catch(() => null)
     if (!t) return res.status(404).json({ message: 'Template not found' })
+    // An edited built-in can always go ("Reset to original"): shops fall back
+    // to the original look. The founder decides once it has been live.
+    if (t.builtIn) {
+      if (['published', 'hidden'].includes(t.status) && !isFounder(req.user)) return res.status(403).json({ message: 'Only the founder can reset this template' })
+      await StudioTemplate.deleteOne({ _id: t._id })
+      await refreshTemplates()
+      if (t.status === 'published') await remakeDemo(req.user, t.builtIn, `${t.label} demo`)
+      return res.json({ message: 'Back to the original' })
+    }
     if (t.status === 'published') return res.status(400).json({ message: 'Hide it first' })
     if (['hidden'].includes(t.status) && !isFounder(req.user)) return res.status(403).json({ message: 'Only the founder can delete this' })
     if ((await shopsUsing(t.key)) > 0) return res.status(400).json({ message: 'Shops are using this template, so it stays. You can keep it hidden.' })
@@ -164,5 +190,22 @@ export const deleteStudio = async (req, res) => {
     res.json({ message: 'Deleted' })
   } catch (error) {
     serverError(res, error, 'deleteStudio')
+  }
+}
+
+// POST /api/studio/upload  (multipart "image") -> { url }
+// Photos for templates. Use your own photos, or free-licence stock photos
+// (e.g. Unsplash, Pexels) - never pictures copied from other shops or Google.
+export const uploadStudioPicture = async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: 'Choose a picture to upload' })
+    const result = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream({ folder: 'platform/templates' }, (error, out) => (error ? reject(error) : resolve(out)))
+      stream.end(req.file.buffer)
+    })
+    res.json({ url: result.secure_url })
+  } catch (error) {
+    console.error('uploadStudioPicture:', error)
+    res.status(500).json({ message: 'Upload failed. Please try again.' })
   }
 }

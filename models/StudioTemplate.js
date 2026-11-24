@@ -13,6 +13,13 @@ const studioTemplateSchema = new mongoose.Schema(
     description: { type: String, trim: true, maxlength: 240, default: '' },
     sampleSet: { type: String, default: 'classic' },
     recipe: { type: mongoose.Schema.Types.Mixed, required: true },
+    // Real photos (all optional): { hero, banner, featured, products: { 'Sample name': url } }
+    // New shops and the demo shop start with these instead of drawn pictures.
+    pictures: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
+    // Set when this is an edited version of a built-in template (e.g. 'fresh').
+    // Published, it replaces the built-in look everywhere; deleting it brings
+    // the original back.
+    builtIn: { type: String, default: '' },
     status: { type: String, enum: ['draft', 'review', 'published', 'hidden'], default: 'draft' },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     createdByName: { type: String, default: '' },

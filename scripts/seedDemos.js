@@ -65,7 +65,7 @@ export async function seedDemos({ email, password, log = console.log }) {
 
   const made = []
   await refreshTemplates()
-  const studioNames = Object.fromEntries(publishedStudioTemplates().map((t) => [t.id, `${t.label} demo`]))
+  const studioNames = Object.fromEntries(publishedStudioTemplates().filter((t) => !t.builtIn).map((t) => [t.id, `${t.label} demo`]))
   for (const template of [...BUILTIN_TEMPLATES, ...Object.keys(studioNames)]) {
     const store = await remakeDemo(owner, template, NAMES[template] || studioNames[template] || `${template} demo`)
     made.push(store)

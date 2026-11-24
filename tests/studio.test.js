@@ -244,6 +244,79 @@ await check('seed-demos also rebuilds demos for published Studio templates', asy
   assert.equal(made.length, 9)
 })
 
+// ---------- real photos ----------
+const HeroSlide = (await imp('models/HeroSlide.js')).default
+const photo = (n) => `https://res.cloudinary.com/test/image/upload/platform/templates/${n}.jpg`
+await check('photo addresses are checked; only the chosen sample products get slots', async () => {
+  const bad = async (pictures) => (await studio(SC.createStudio, founderTok, { body: { ...luxe, key: 'pics-bad', pictures } })).statusCode
+  assert.equal(await bad({ hero: 'http://insecure.test/a.jpg' }), 400)
+  assert.equal(await bad({ hero: 'javascript:alert(1)' }), 400)
+  const r = await studio(SC.createStudio, founderTok, { body: { ...luxe, key: 'photo-shop', label: 'Photo Shop', sampleSet: 'fresh', pictures: { hero: photo('hero'), products: { 'Party Jollof Rice': photo('jollof'), 'Not A Sample': photo('x') } } } })
+  assert.equal(r.statusCode, 201, JSON.stringify(r.body))
+  assert.deepEqual(Object.keys(r.body.pictures.products), ['Party Jollof Rice'])
+  await studio(SC.setStudioStatus, founderTok, { params: { id: r.body._id }, body: { status: 'published' } })
+})
+await check('new shops (and the demo) start with the real photos; drawn pictures fill the rest', async () => {
+  const s = await signup('photoowner', 'Photo Owner', 'photo-shop')
+  const jollof = await Product.findOne({ store: s.shop._id, name: 'Party Jollof Rice' })
+  assert.equal(jollof.image, photo('jollof'))
+  const zobo = await Product.findOne({ store: s.shop._id, name: 'Chilled Zobo' })
+  assert.match(zobo.image, /^data:image\/svg/)
+  assert.equal((await HeroSlide.findOne({ store: s.shop._id })).mediaUrl, photo('hero'))
+  const demo = await Store.findOne({ slug: 'demo-photo-shop' })
+  assert.equal((await Product.findOne({ store: demo._id, name: 'Party Jollof Rice' })).image, photo('jollof'))
+})
+await check('uploading a template photo returns its address', async () => {
+  if (!FAKE) return // never uploads to the real Cloudinary from tests
+  const r = await studio(SC.uploadStudioPicture, founderTok, {})
+  assert.equal(r.statusCode, 400)
+  const ok = await run([PL.platformProtect, SC.studioAccess, (req, res, next) => ((req.file = { buffer: Buffer.from('x') }), next()), SC.uploadStudioPicture], { token: founderTok }, false)
+  assert.match(ok.body.url, /^https:\/\/res\.cloudinary\.com\/.+platform\/templates/)
+})
+
+// ---------- editing a built-in template ----------
+let freshEdit
+const freshShop = await signup('fola', 'Fola Foods', 'fresh')
+const freshHost = `${freshShop.shop.slug}.shopsy.ng`
+const freshTheme = async () => (await run([S.getSettings], { host: freshHost, token: freshShop.account.token })).body.theme
+await check('edit a built-in: one edited version, made like any template, not live until published', async () => {
+  await founder(F.addDesigner, founderTok, { body: { email: 'dayo@x.ng' } })
+  const r = await studio(SC.createStudio, dayo.account.token, { body: { builtIn: 'fresh', label: 'Fresh', bestFor: 'Food', sampleSet: 'fresh', recipe: { ...recipe, brand: '#15803d' }, pictures: { products: { 'Chilled Zobo': photo('zobo') } } } })
+  assert.equal(r.statusCode, 201, JSON.stringify(r.body))
+  assert.equal(r.body.builtIn, 'fresh')
+  freshEdit = r.body._id
+  assert.equal((await studio(SC.createStudio, founderTok, { body: { builtIn: 'fresh', label: 'Again', recipe } })).statusCode, 400)
+  assert.equal((await studio(SC.createStudio, founderTok, { body: { builtIn: 'nope', label: 'X', recipe } })).statusCode, 400)
+  assert.equal((await freshTheme()).recipe, undefined, 'draft: shops keep the original')
+  const odd = await signup('odd', 'Odd Shop', 'builtin-fresh')
+  assert.equal((await Settings.findOne({ store: odd.shop._id })).theme.template, 'classic', 'the edit is not a separate template')
+})
+await check('published: every shop on that built-in gets the new look, the gallery and demo too', async () => {
+  await studio(SC.setStudioStatus, dayo.account.token, { params: { id: freshEdit }, body: { status: 'review' } })
+  const r = await studio(SC.setStudioStatus, founderTok, { params: { id: freshEdit }, body: { status: 'published' } })
+  assert.equal(r.body.status, 'published')
+  assert.equal(r.body.shops >= 1, true)
+  assert.equal((await freshTheme()).recipe.brand, '#15803d')
+  const g = (await run([PL.getStudioGallery], {}, false)).body
+  assert.equal(g.find((t) => t.id === 'fresh')?.builtIn, 'fresh')
+  const demo = await Store.findOne({ slug: 'demo-fresh' })
+  assert.equal((await Product.findOne({ store: demo._id, name: 'Chilled Zobo' })).image, photo('zobo'))
+  const odd2 = await signup('odd2', 'Odd Two', 'builtin-fresh')
+  assert.equal((await Settings.findOne({ store: odd2.shop._id })).theme.template, 'classic', 'still not a separate template once published')
+  assert.ok(!(await run([PL.getStudioGallery], {}, false)).body.some((t) => t.id === 'builtin-fresh'))
+  const s = await signup('newfresh', 'New Fresh', 'fresh')
+  assert.equal((await Product.findOne({ store: s.shop._id, name: 'Chilled Zobo' })).image, photo('zobo'))
+})
+await check('reset to original: only the founder, and everything goes back', async () => {
+  assert.equal((await studio(SC.deleteStudio, dayo.account.token, { params: { id: freshEdit } })).statusCode, 403)
+  const r = await studio(SC.deleteStudio, founderTok, { params: { id: freshEdit } })
+  assert.equal(r.statusCode, 200)
+  assert.equal((await freshTheme()).recipe, undefined)
+  assert.ok(!(await run([PL.getStudioGallery], {}, false)).body.some((t) => t.id === 'fresh'))
+  const demo = await Store.findOne({ slug: 'demo-fresh' })
+  assert.match((await Product.findOne({ store: demo._id, name: 'Chilled Zobo' })).image, /^data:image\/svg/)
+})
+
 console.log(`${FAKE ? '[in-memory] ' : '[MongoDB] '}${passed} passed, ${failures.length} failed`)
 for (const f of failures) console.log('  FAIL', f)
 if (!FAKE) {

@@ -4,7 +4,7 @@ import Category from '../models/Category.js'
 import HeroSlide from '../models/HeroSlide.js'
 import { getStoreSettings } from '../controllers/settingsController.js'
 import { sampleContent } from './sampleData.js'
-import { freshTemplates, isSelectableTemplate, sampleSetFor } from './templates.js'
+import { freshTemplates, isSelectableTemplate, sampleSetFor, picturesFor } from './templates.js'
 import { trialDays } from './plans.js'
 import { forgetStore } from '../middleware/storeMiddleware.js'
 
@@ -94,7 +94,7 @@ export async function createShop({ owner, name, slug, template = 'classic', plan
     settings.theme.template = template
 
     if (samples) {
-      const content = sampleContent(sampleSetFor(template), shopName)
+      const content = sampleContent(sampleSetFor(template), shopName, picturesFor(template))
       for (const [section, values] of Object.entries(content.settings)) {
         for (const [field, value] of Object.entries(values)) settings[section][field] = value
       }
