@@ -2,6 +2,7 @@ import express from 'express'
 import {
   getPlans,
   getDemos,
+  getStudioGallery,
   slugCheck,
   signup,
   login,
@@ -20,6 +21,7 @@ const router = express.Router()
 
 router.get('/plans', getPlans)
 router.get('/demos', getDemos)
+router.get('/templates', getStudioGallery)
 router.get('/slug-check', slugCheckLimiter, slugCheck)
 router.post('/signup', shopCreateLimiter, signup)
 router.post('/login', loginLimiter, login)

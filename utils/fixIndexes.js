@@ -13,6 +13,7 @@ import BillingPayment from '../models/BillingPayment.js'
 import SavedDesign from '../models/SavedDesign.js'
 import MarketClick from '../models/MarketClick.js'
 import MarketReport from '../models/MarketReport.js'
+import StudioTemplate from '../models/StudioTemplate.js'
 
 // A database that was used by the single-store version still has its old
 // rules, like "one page called faq in the whole database" or "one logo called
@@ -41,6 +42,6 @@ export async function fixOldIndexes(log = console.log) {
     }
   }
   // Build the per-shop rules (and remove indexes the models no longer have)
-  for (const model of [...SHOP_MODELS, Store, BillingPayment, SavedDesign, MarketClick, MarketReport]) await model.syncIndexes()
+  for (const model of [...SHOP_MODELS, Store, BillingPayment, SavedDesign, MarketClick, MarketReport, StudioTemplate]) await model.syncIndexes()
   return dropped
 }

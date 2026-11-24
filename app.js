@@ -18,6 +18,7 @@ import platformRoutes from './routes/platformRoutes.js'
 import designRoutes from './routes/designRoutes.js'
 import billingRoutes from './routes/billingRoutes.js'
 import { marketRouter, marketSettingsRouter } from './routes/marketRoutes.js'
+import studioRoutes from './routes/studioRoutes.js'
 import founderRoutes from './routes/founderRoutes.js'
 import domainRoutes from './routes/domainRoutes.js'
 import { billingWebhook } from './controllers/billingController.js'
@@ -53,6 +54,7 @@ export function createApp() {
   // The founder dashboard (platform owner only)
   app.use('/api/founder', founderRoutes)
   app.use('/api/market', marketRouter)
+  app.use('/api/studio', studioRoutes)
 
   // Everything else is for one shop: work out which (req.store), then hide it
   // from visitors if it isn't live. See middleware/storeMiddleware.js.

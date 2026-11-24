@@ -2,6 +2,21 @@ import { upsertSafely } from '../utils/tenant.js'
 import { cleanSections, liveSections, SectionError } from '../utils/sections.js'
 import { canManageStore } from '../utils/storeAccess.js'
 import Settings from '../models/Settings.js'
+import { BUILTIN_TEMPLATES, freshTemplates, isSelectableTemplate, recipeFor, sampleSetFor, studioStatus } from '../utils/templates.js'
+
+// A template a shop may wear: built-in, published in the Studio, or a Studio
+// template that was later hidden (shops already using it keep it). Drafts and
+// templates waiting for review are never usable.
+const isUsableTemplate = (t) => isSelectableTemplate(t) || studioStatus(t) === 'hidden'
+
+// Studio templates aren't in the frontend code, so their recipe travels with
+// the theme. The recipe is never saved on the shop: it's always the latest.
+function withRecipe(theme) {
+  if (!theme) return theme
+  const { recipe: _ignored, sampleSet: _ignored2, ...rest } = theme
+  const recipe = recipeFor(rest.template)
+  return recipe ? { ...rest, recipe, sampleSet: sampleSetFor(rest.template) } : rest
+}
 
 const TOP_LEVEL_FIELDS = ['storeName', 'contactEmail', 'contactPhone', 'whatsappNumber']
 
@@ -38,7 +53,8 @@ const BOOLEAN_FIELDS = new Set([
 
 // ---------- theme and opening hours: stricter checks ----------
 // These must match frontend utils/themes.js. Empty string = "use the template's own".
-export const TEMPLATES = ['classic', 'minimal', 'bold', 'fresh', 'catalog', 'glow', 'tech', 'playful']
+// The 8 built-in templates (Template Studio ones live in utils/templates.js)
+export const TEMPLATES = BUILTIN_TEMPLATES
 const HEADING_FONTS = ['poppins', 'epilogue', 'anton', 'playfair']
 const BODY_FONTS = ['epilogue', 'poppins']
 const RADII = ['square', 'soft', 'round']
@@ -58,7 +74,7 @@ export function cleanTheme(input) {
 
   if (input.template !== undefined) {
     const t = String(input.template).trim().toLowerCase()
-    if (!TEMPLATES.includes(t)) throw new Error('Unknown template')
+    if (!isUsableTemplate(t)) throw new Error('Unknown template')
     out.template = t
   }
   pick('headingFont', HEADING_FONTS, 'heading font')
@@ -136,6 +152,7 @@ export function storefrontSettings(settings, { preview = false } = {}) {
     if (Array.isArray(draft.homeSections)) out.homeSections = draft.homeSections
     out.isPreview = true
   }
+  out.theme = withRecipe(out.theme)
   return out
 }
 
@@ -144,6 +161,7 @@ export function storefrontSettings(settings, { preview = false } = {}) {
 export const getSettings = async (req, res) => {
   try {
     const settings = await getStoreSettings(req.store)
+    await freshTemplates()
     const preview = req.query?.preview === '1' && canManageStore(req.user, req.store)
     res.json(storefrontSettings(settings, { preview }))
   } catch (error) {
@@ -228,10 +246,11 @@ function designOf(settings) {
     theme: Object.fromEntries(THEME_FIELDS.map((f) => [f, settings.theme?.[f] ?? ''])),
     homeSections: liveSections(settings.toObject ? settings.toObject() : settings),
   }
+  live.theme = withRecipe(live.theme)
   const draft = settings.draft
   if (!draft) return { ...live, hasDraft: false }
   return {
-    theme: { ...live.theme, ...(draft.theme || {}) },
+    theme: withRecipe({ ...live.theme, ...(draft.theme || {}) }),
     homeSections: Array.isArray(draft.homeSections) ? draft.homeSections : live.homeSections,
     hasDraft: true,
     draftUpdatedAt: draft.updatedAt || null,
@@ -241,7 +260,9 @@ function designOf(settings) {
 // GET /api/settings/draft  (admin)
 export const getDraft = async (req, res) => {
   try {
-    res.json(designOf(await getStoreSettings(req.store)))
+    const settings = await getStoreSettings(req.store)
+    await freshTemplates()
+    res.json(designOf(settings))
   } catch (error) {
     console.error('getDraft error:', error)
     res.status(500).json({ message: 'Something went wrong' })

@@ -8,11 +8,16 @@ import { createShop, checkSlug, slugify, ShopError } from '../utils/createShop.j
 import { publicPlans, trialDays, envNumber } from '../utils/plans.js'
 import { storeState, canManageStore } from '../utils/storeAccess.js'
 import { storeUrl } from '../utils/storeUrl.js'
-import { TEMPLATES, cleanTheme } from './settingsController.js'
+import { cleanTheme } from './settingsController.js'
+import { freshTemplates, isSelectableTemplate, publishedStudioTemplates } from '../utils/templates.js'
 import SavedDesign from '../models/SavedDesign.js'
 import { cleanSections } from '../utils/sections.js'
 import { sendPlatformPasswordReset } from '../utils/email.js'
 import { cleanEmail, cleanName, validPassword, isString, MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from '../utils/validate.js'
+
+// Platform accounts. Shop customers, and accounts from the old single-store
+// app that were never migrated, are not: they can't sign in or reset here.
+const PLATFORM_ROLES = ['merchant', 'superadmin']
 
 // The platform's own site (yourplatform.com): the template gallery, sign-up,
 // and the merchant's list of shops. Nothing here belongs to one shop, so these
@@ -35,6 +40,7 @@ const accountResponse = (user) => ({
   name: user.name,
   email: user.email,
   role: user.role,
+  designer: Boolean(user.designer),
   token: platformToken(user),
 })
 
@@ -63,14 +69,26 @@ export const getPlans = (req, res) => {
 // The live demo shop for each template, for "View demo" in the gallery
 export const getDemos = async (req, res) => {
   try {
+    await freshTemplates()
     const demos = await Store.find({ isDemo: true, suspended: { $ne: true } }).select('slug name customDomain customDomainVerified').lean()
     res.json(
       demos
         .map((store) => ({ template: store.slug.replace(/^demo-/, ''), name: store.name, url: storeUrl(store) }))
-        .filter((d) => TEMPLATES.includes(d.template))
+        .filter((d) => isSelectableTemplate(d.template))
     )
   } catch (error) {
     serverError(res, error, 'getDemos')
+  }
+}
+
+// GET /api/platform/templates -> Template Studio templates in the gallery
+// (the 8 built-in ones are in the frontend code)
+export const getStudioGallery = async (req, res) => {
+  try {
+    await freshTemplates()
+    res.json(publishedStudioTemplates())
+  } catch (error) {
+    serverError(res, error, 'getStudioGallery')
   }
 }
 
@@ -103,7 +121,8 @@ export const signup = async (req, res) => {
     if (req.body.acceptTerms !== true) {
       return res.status(400).json({ message: 'Please accept the terms and the selling rules to continue', field: 'terms' })
     }
-    const template = TEMPLATES.includes(req.body.template) ? req.body.template : 'classic'
+    await freshTemplates()
+    const template = isSelectableTemplate(req.body.template) ? req.body.template : 'classic'
 
     const slug = isString(req.body.slug) && req.body.slug.trim() ? req.body.slug.trim().toLowerCase() : slugify(shopName)
     const check = await checkSlug(slug)
@@ -135,7 +154,7 @@ export const login = async (req, res) => {
     if (!email || !isString(req.body.password)) {
       return res.status(400).json({ message: 'Enter your email and password' })
     }
-    const user = await User.findOne({ store: null, email })
+    const user = await User.findOne({ store: null, email, role: { $in: PLATFORM_ROLES } })
     if (!user) {
       await bcrypt.compare(req.body.password, DUMMY_HASH)
       return res.status(401).json({ message: 'Invalid email or password' })
@@ -180,7 +199,7 @@ export const getMe = async (req, res) => {
   try {
     const shops = (await myShops(req.user)).filter((s) => canManageStore(req.user, s))
     res.json({
-      account: { _id: req.user._id, name: req.user.name, email: req.user.email, role: req.user.role },
+      account: { _id: req.user._id, name: req.user.name, email: req.user.email, role: req.user.role, designer: Boolean(req.user.designer) },
       shops: shops.map((s) => shopSummary(s, req.user)),
       maxShops: maxShops(),
     })
@@ -198,7 +217,8 @@ export const createAnotherShop = async (req, res) => {
     }
     const shopName = isString(req.body.shopName) ? req.body.shopName.trim() : ''
     if (!shopName) return res.status(400).json({ message: 'Give your shop a name' })
-    const template = TEMPLATES.includes(req.body.template) ? req.body.template : 'classic'
+    await freshTemplates()
+    const template = isSelectableTemplate(req.body.template) ? req.body.template : 'classic'
     const slug = isString(req.body.slug) && req.body.slug.trim() ? req.body.slug.trim().toLowerCase() : slugify(shopName)
     const check = await checkSlug(slug)
     if (!check.available) return res.status(400).json({ message: check.reason, field: 'slug', suggestion: check.suggestion })
@@ -273,18 +293,23 @@ export function platformLink(path) {
   return `${base}${path}${path.includes('?') ? '&' : '?'}platform=1`
 }
 
+// Platform accounts. Shop customers (and old single-store accounts that were
+// never migrated) are not, so they can't sign in or reset here.
 // POST /api/platform/forgot-password  { email }
 export const forgotPassword = async (req, res) => {
   try {
     const email = cleanEmail(req.body.email)
     if (!email) return res.status(400).json({ message: 'Enter a valid email address' })
-    const user = await User.findOne({ store: null, email })
+    const user = await User.findOne({ store: null, email, role: { $in: PLATFORM_ROLES } })
     // Same answer either way, so this can't be used to find out who has an account
     if (user) {
       const raw = crypto.randomBytes(32).toString('hex')
-      user.resetToken = crypto.createHash('sha256').update(raw).digest('hex')
-      user.resetTokenExpires = new Date(Date.now() + 30 * 60 * 1000)
-      await user.save()
+      // Only these two fields change, so an older account with other odd
+      // fields can't make the save fail
+      await User.updateOne(
+        { _id: user._id },
+        { $set: { resetToken: crypto.createHash('sha256').update(raw).digest('hex'), resetTokenExpires: new Date(Date.now() + 30 * 60 * 1000) } }
+      )
       sendPlatformPasswordReset(user, platformLink(`/reset-password/${raw}`)).catch((e) => console.error('Reset email error:', e.message))
     }
     res.json({ message: 'If that email has an account, a reset link has been sent.' })
@@ -301,6 +326,7 @@ export const resetPassword = async (req, res) => {
     if (!validPassword(password)) return res.status(400).json({ message: PASSWORD_MESSAGE })
     const user = await User.findOne({
       store: null,
+      role: { $in: PLATFORM_ROLES },
       resetToken: crypto.createHash('sha256').update(token).digest('hex'),
       resetTokenExpires: { $gt: new Date() },
     })

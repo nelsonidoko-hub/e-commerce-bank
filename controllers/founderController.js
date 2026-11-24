@@ -58,6 +58,43 @@ async function ownersOf(stores) {
   return new Map(owners.map((o) => [String(o._id), o]))
 }
 
+// ---------- the team (Template Studio designers) ----------
+const teamView = (u) => ({ _id: u._id, name: u.name, email: u.email, founder: u.role === 'superadmin', designer: Boolean(u.designer) })
+
+// GET /api/founder/team
+export const listTeam = async (req, res) => {
+  try {
+    const team = await User.find({ store: null, $or: [{ role: 'superadmin' }, { designer: true }] }).select('name email role designer').lean()
+    res.json(team.map(teamView))
+  } catch (error) {
+    serverError(res, error, 'listTeam')
+  }
+}
+
+// POST /api/founder/team { email }  -> that platform account can use the Studio
+export const addDesigner = async (req, res) => {
+  try {
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : ''
+    const user = email ? await User.findOne({ store: null, email, role: { $in: ['merchant', 'superadmin'] } }) : null
+    if (!user) return res.status(404).json({ message: 'No platform account with that email. Ask them to sign up first.' })
+    await User.updateOne({ _id: user._id }, { $set: { designer: true } })
+    res.json(teamView({ ...user.toObject(), designer: true }))
+  } catch (error) {
+    serverError(res, error, 'addDesigner')
+  }
+}
+
+// DELETE /api/founder/team/:id
+export const removeDesigner = async (req, res) => {
+  try {
+    const r = await User.updateOne({ _id: req.params.id, store: null }, { $set: { designer: false } }).catch(() => null)
+    if (!r?.matchedCount) return res.status(404).json({ message: 'Not found' })
+    res.json({ message: 'Removed from the team' })
+  } catch (error) {
+    serverError(res, error, 'removeDesigner')
+  }
+}
+
 // GET /api/founder/overview
 export const overview = async (req, res) => {
   try {

@@ -7,7 +7,58 @@
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 
-// A picture: soft gradient in the given colours with a label
+// A small drawing (emoji) for each kind of product, so a sample picture shows
+// what the thing is, not just its name. First match wins. Kept in step with
+// frontend utils/pictureIcons.js.
+export const PICTURE_ICONS = [
+  [/backpack|school bag/i, '🎒'],
+  [/sneaker|shoe|slides|sandal/i, '👟'],
+  [/sun hat|straw hat/i, '👒'],
+  [/cap\b|hat\b/i, '🧢'],
+  [/dress|gown/i, '👗'],
+  [/hoodie|jacket|coat/i, '🧥'],
+  [/trouser|pants|jeans|shorts/i, '👖'],
+  [/scarf/i, '🧣'],
+  [/tee\b|t-shirt|shirt|top\b/i, '👕'],
+  [/tote|clutch|bag|purse/i, '👜'],
+  [/belt|tie\b/i, '👔'],
+  [/romper|baby wear/i, '👶'],
+  [/feeding|bottle set|baby/i, '🍼'],
+  [/teddy|plush|toy/i, '🧸'],
+  [/blocks|lego/i, '🧱'],
+  [/crayon|art kit|paint/i, '🖍️'],
+  [/jollof|fried rice|ofada|rice/i, '🍛'],
+  [/small chops|platter|suya/i, '🍢'],
+  [/soup|stew/i, '🍲'],
+  [/cake|pastry|bread/i, '🍰'],
+  [/zobo|chapman|juice|drink|smoothie/i, '🍹'],
+  [/water bottle|flask/i, '🥤'],
+  [/frying pan|pan\b|pot\b/i, '🍳'],
+  [/kettle|tea/i, '☕'],
+  [/blender/i, '🥤'],
+  [/fan\b/i, '🌀'],
+  [/bulb|lamp|light/i, '💡'],
+  [/towel/i, '🛁'],
+  [/storage|container/i, '🥡'],
+  [/extension|socket|charger|cable/i, '🔌'],
+  [/clock/i, '🕰️'],
+  [/lip|lipstick|gloss/i, '💄'],
+  [/mist|perfume|fragrance/i, '🌸'],
+  [/lotion|cream|serum|butter|soap|oil|cleanser/i, '🧴'],
+  [/earbud|headphone|earphone/i, '🎧'],
+  [/speaker/i, '🔊'],
+  [/power bank|battery/i, '🔋'],
+  [/watch/i, '⌚'],
+  [/phone|case/i, '📱'],
+  [/laptop|computer/i, '💻'],
+  [/book/i, '📚'],
+  [/plant|flower/i, '🪴'],
+  [/new arrivals|collection|sale/i, '🛍️'],
+]
+export const pictureIcon = (label) => PICTURE_ICONS.find(([re]) => re.test(String(label)))?.[1] || '🛍️'
+
+// A picture: soft gradient in the given colours, a drawing of the product,
+// and its name underneath
 export function samplePicture(label, from = '#e5e7eb', to = '#9ca3af', { width = 600, height = 800 } = {}) {
   const words = String(label).split(' ')
   const lines = []
@@ -16,13 +67,15 @@ export function samplePicture(label, from = '#e5e7eb', to = '#9ca3af', { width =
     if (last && (last + ' ' + w).length <= 14) lines[lines.length - 1] = `${last} ${w}`
     else lines.push(w)
   }
-  const size = Math.round(width / 11)
-  const startY = height / 2 - ((lines.length - 1) * size * 1.2) / 2
+  const size = Math.round(Math.min(width, height * 0.9) / 11)
+  const icon = Math.round(Math.min(width, height) * 0.38)
+  const iconY = height * 0.42
+  const startY = iconY + icon * 0.72
   const text = lines
-    .slice(0, 3)
+    .slice(0, 2)
     .map((l, i) => `<text x="50%" y="${startY + i * size * 1.2}" text-anchor="middle" dominant-baseline="middle" font-family="Arial, sans-serif" font-size="${size}" font-weight="700" fill="#ffffff" fill-opacity="0.92">${esc(l)}</text>`)
     .join('')
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient></defs><rect width="100%" height="100%" fill="url(#g)"/>${text}<text x="50%" y="${height - size * 0.8}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${Math.round(size * 0.45)}" fill="#ffffff" fill-opacity="0.75">SAMPLE</text></svg>`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient></defs><rect width="100%" height="100%" fill="url(#g)"/><circle cx="50%" cy="${iconY}" r="${icon * 0.62}" fill="#ffffff" fill-opacity="0.22"/><text x="50%" y="${iconY}" text-anchor="middle" dominant-baseline="central" font-size="${icon}">${pictureIcon(label)}</text>${text}<text x="50%" y="${height - size * 0.8}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${Math.round(size * 0.45)}" fill="#ffffff" fill-opacity="0.75">SAMPLE</text></svg>`
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
 }
 

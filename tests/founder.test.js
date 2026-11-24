@@ -359,6 +359,24 @@ await check('with BREVO_API_KEY set, emails go through Brevo from the verified s
   }
 })
 
+await check('old single-store accounts (role "admin") get the normal answer, no crash, no email, no login', async () => {
+  const old = await User.create({ store: null, role: 'merchant', name: 'Old Admin', email: 'oldadmin@x.ng', password: 'old-admin-pass-1' })
+  await User.updateOne({ _id: old._id }, { $set: { role: 'admin' } })
+  emails.length = 0
+  const r = await run([PL.forgotPassword], { body: { email: 'oldadmin@x.ng' } }, false)
+  assert.equal(r.statusCode, 200)
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(emails.length, 0)
+  assert.equal((await run([PL.login], { body: { email: 'oldadmin@x.ng', password: 'old-admin-pass-1' } }, false)).statusCode, 401)
+})
+
+await check('seed-demos turns an existing account with that email into the founder', async () => {
+  const { seedDemos: seed } = await imp('scripts/seedDemos.js')
+  await seed({ email: 'amaka@x.ng', password: '', log: () => {} })
+  assert.equal((await User.findOne({ store: null, email: 'amaka@x.ng' })).role, 'superadmin')
+  await User.updateOne({ store: null, email: 'amaka@x.ng' }, { $set: { role: 'merchant' } })
+})
+
 // ---------- terms ----------
 await check('sign-up needs the terms accepted, and records when', async () => {
   const r = await run([PL.signup], { body: { name: 'Dayo', email: 'dayo@x.ng', password: 'dayo-pass-123', shopName: 'Dayo Shop' } }, false)

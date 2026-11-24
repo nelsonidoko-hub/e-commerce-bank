@@ -2,8 +2,9 @@ import Store, { SLUG_PATTERN, RESERVED_SLUGS } from '../models/Store.js'
 import Product from '../models/Product.js'
 import Category from '../models/Category.js'
 import HeroSlide from '../models/HeroSlide.js'
-import { getStoreSettings, TEMPLATES } from '../controllers/settingsController.js'
+import { getStoreSettings } from '../controllers/settingsController.js'
 import { sampleContent } from './sampleData.js'
+import { freshTemplates, isSelectableTemplate, sampleSetFor } from './templates.js'
 import { trialDays } from './plans.js'
 import { forgetStore } from '../middleware/storeMiddleware.js'
 
@@ -65,7 +66,8 @@ export async function createShop({ owner, name, slug, template = 'classic', plan
   const cleanSlug = String(slug || slugify(shopName)).trim().toLowerCase()
   const problem = isDemo ? '' : slugProblem(cleanSlug)
   if (problem) throw new ShopError(problem)
-  if (!TEMPLATES.includes(template)) throw new ShopError('Unknown template')
+  await freshTemplates()
+  if (!isSelectableTemplate(template)) throw new ShopError('Unknown template')
 
   const now = new Date()
   let store
@@ -92,7 +94,7 @@ export async function createShop({ owner, name, slug, template = 'classic', plan
     settings.theme.template = template
 
     if (samples) {
-      const content = sampleContent(template, shopName)
+      const content = sampleContent(sampleSetFor(template), shopName)
       for (const [section, values] of Object.entries(content.settings)) {
         for (const [field, value] of Object.entries(values)) settings[section][field] = value
       }

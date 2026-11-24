@@ -17,7 +17,7 @@ import HeroSlide from '../models/HeroSlide.js'
 import Settings from '../models/Settings.js'
 import Page from '../models/Page.js'
 import { createShop } from '../utils/createShop.js'
-import { TEMPLATES } from '../controllers/settingsController.js'
+import { BUILTIN_TEMPLATES, refreshTemplates, publishedStudioTemplates } from '../utils/templates.js'
 import { storeUrl } from '../utils/storeUrl.js'
 
 dotenv.config()
@@ -33,6 +33,17 @@ const NAMES = {
   playful: 'Little Ones Demo',
 }
 
+// (Re)builds one template's demo shop, demo-<template>, from scratch
+export async function remakeDemo(owner, template, name) {
+  const slug = `demo-${template}`
+  const old = await Store.findOne({ slug })
+  if (old) {
+    for (const model of [Product, Category, HeroSlide, Settings, Page]) await model.deleteMany({ store: old._id })
+    await Store.deleteOne({ _id: old._id })
+  }
+  return createShop({ owner, name, slug, template, plan: 'pro', isDemo: true })
+}
+
 export async function seedDemos({ email, password, log = console.log }) {
   email = String(email || '').trim().toLowerCase()
   if (!email) throw new Error('Set PLATFORM_ADMIN_EMAIL')
@@ -41,17 +52,22 @@ export async function seedDemos({ email, password, log = console.log }) {
   if (!owner) {
     if (!password || password.length < 12) throw new Error('Set PLATFORM_ADMIN_PASSWORD (12+ characters) to create the platform account')
     owner = await User.create({ store: null, role: 'superadmin', name: 'Platform', email, password })
+    log(`Founder account created: ${email}`)
+  } else if (owner.role !== 'superadmin') {
+    // The email already has an account (an old store admin, or a shop you
+    // signed up for): make it the founder. Its password stays the same.
+    await User.updateOne({ _id: owner._id }, { $set: { role: 'superadmin' } })
+    owner.role = 'superadmin'
+    log(`${email} already had an account. It is now the founder account (same password as before).`)
+  } else {
+    log(`Founder account already set up: ${email}`)
   }
 
   const made = []
-  for (const template of TEMPLATES) {
-    const slug = `demo-${template}`
-    const old = await Store.findOne({ slug })
-    if (old) {
-      for (const model of [Product, Category, HeroSlide, Settings, Page]) await model.deleteMany({ store: old._id })
-      await Store.deleteOne({ _id: old._id })
-    }
-    const store = await createShop({ owner, name: NAMES[template] || `${template} demo`, slug, template, plan: 'pro', isDemo: true })
+  await refreshTemplates()
+  const studioNames = Object.fromEntries(publishedStudioTemplates().map((t) => [t.id, `${t.label} demo`]))
+  for (const template of [...BUILTIN_TEMPLATES, ...Object.keys(studioNames)]) {
+    const store = await remakeDemo(owner, template, NAMES[template] || studioNames[template] || `${template} demo`)
     made.push(store)
     log(`${template.padEnd(8)} ${storeUrl(store)}`)
   }

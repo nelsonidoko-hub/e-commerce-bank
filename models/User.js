@@ -29,6 +29,8 @@ const userSchema = new mongoose.Schema(
       enum: ['customer', 'merchant', 'superadmin'],
       default: 'customer',
     },
+    // A platform team member allowed into the Template Studio (set by the founder)
+    designer: { type: Boolean, default: false },
     resetToken: String,
     resetTokenExpires: Date,
     // Set whenever the password changes. Login tokens issued before this
