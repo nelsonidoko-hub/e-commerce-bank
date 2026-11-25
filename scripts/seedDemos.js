@@ -31,6 +31,8 @@ const NAMES = {
   glow: 'Glow Beauty Demo',
   tech: 'Gadget Hub Demo',
   playful: 'Little Ones Demo',
+  gadget: 'Gadget Hub Demo',
+  atelier: 'Atelier Demo',
 }
 
 // (Re)builds one template's demo shop, demo-<template>, from scratch

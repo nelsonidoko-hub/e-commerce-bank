@@ -6,7 +6,7 @@ import { SAMPLE_PRODUCT_NAMES } from './sampleData.js'
 // Lookups here are instant (kept in memory) and refreshed whenever the Studio
 // changes something, and at least every minute.
 
-export const BUILTIN_TEMPLATES = ['classic', 'minimal', 'bold', 'fresh', 'catalog', 'glow', 'tech', 'playful']
+export const BUILTIN_TEMPLATES = ['classic', 'minimal', 'bold', 'fresh', 'catalog', 'glow', 'tech', 'playful', 'gadget', 'atelier']
 
 // The parts a recipe is made of. These must match frontend utils/themes.js.
 export const PARTS = {
@@ -18,7 +18,7 @@ export const PARTS = {
   grid: ['grid', 'list'],
   columns: [2, 3, 4, 5],
   footer: ['dark', 'light'],
-  hero: ['full', 'compact', 'slim'],
+  hero: ['full', 'compact', 'slim', 'split', 'none'],
 }
 // Which starter products a new shop gets (the built-in sets in sampleData.js)
 export const SAMPLE_SETS = {
@@ -74,8 +74,17 @@ export function cleanRecipe(input) {
       footer: one(l.footer, PARTS.footer, 'footer style'),
       hero: one(l.hero, PARTS.hero, 'banner style'),
       search: l.search === true,
+      // Menu bar and homepage: built-in styles or a template pack's part
+      // (frontend storefront/parts.js). Unknown ids show the standard one.
+      nav: partId(l.nav, 'standard'),
+      home: partId(l.home, 'sections'),
     },
   }
+}
+const partId = (value, fallback) => {
+  if (value === undefined || value === null || value === '') return fallback
+  if (typeof value !== 'string' || !/^[a-z][a-z0-9-]{1,39}$/.test(value)) throw new TemplateError('Choose a valid page structure')
+  return value
 }
 
 // Real photos: only web addresses (https), only for known picture slots and

@@ -198,7 +198,7 @@ await check('a merchant starts with it: the storefront gets the recipe', async (
   const host = `${ada.shop.slug}.shopsy.ng`
   const settings = (await run([S.getSettings], { host, token: ada.account.token })).body
   assert.equal(settings.theme.template, 'luxe')
-  assert.deepEqual(settings.theme.recipe.layout, recipe.layout)
+  assert.deepEqual(settings.theme.recipe.layout, { ...recipe.layout, nav: 'standard', home: 'sections' })
   const saved = await Settings.findOne({ store: ada.shop._id }).lean()
   assert.equal(saved.theme.recipe, undefined, 'the recipe is never copied into the shop')
 })
@@ -241,7 +241,27 @@ await check('seed-demos also rebuilds demos for published Studio templates', asy
   await studio(SC.setStudioStatus, founderTok, { params: { id: luxeId }, body: { status: 'published' } })
   const made = await seedDemos({ email: 'founder@shopsy.ng', password: '', log: () => {} })
   assert.ok(made.some((s) => s.slug === 'demo-luxe'))
-  assert.equal(made.length, 9)
+  assert.equal(made.length, 11)
+})
+
+await check('page structure: menu and homepage parts (pack ids allowed), banner split/none; bad ids refused', async () => {
+  const body = { ...luxe, key: 'structured', label: 'Structured', recipe: { ...recipe, layout: { ...recipe.layout, nav: 'search', home: 'spotlight', hero: 'none' } } }
+  const r = await studio(SC.createStudio, founderTok, { body })
+  assert.equal(r.statusCode, 201, JSON.stringify(r.body))
+  assert.equal(r.body.recipe.layout.nav, 'search')
+  assert.equal(r.body.recipe.layout.home, 'spotlight')
+  assert.equal(r.body.recipe.layout.hero, 'none')
+  const bad = async (layout) => (await studio(SC.createStudio, founderTok, { body: { ...luxe, key: 'bad-structure', recipe: { ...recipe, layout: { ...recipe.layout, ...layout } } } })).statusCode
+  assert.equal(await bad({ nav: '<script>' }), 400)
+  assert.equal(await bad({ home: 'Has Spaces' }), 400)
+  assert.equal(await bad({ hero: 'video-wall' }), 400)
+})
+await check('Gadget and Atelier are built-in templates with electronics and fashion products', async () => {
+  const g = await signup('gadgetshop', 'Gadget Shop', 'gadget')
+  assert.equal((await Settings.findOne({ store: g.shop._id })).theme.template, 'gadget')
+  assert.ok((await Product.find({ store: g.shop._id })).some((p) => p.name === 'Wireless Earbuds'))
+  const a = await signup('ateliershop', 'Atelier Shop', 'atelier')
+  assert.ok((await Product.find({ store: a.shop._id })).some((p) => p.name === 'Silk Scarf'))
 })
 
 // ---------- real photos ----------

@@ -195,6 +195,10 @@ const SETS = {
   },
 }
 
+// Gadget and Atelier start with the same products as Tech and Minimal
+SETS.gadget = SETS.tech
+SETS.atelier = SETS.minimal
+
 export const SAMPLE_TEMPLATES = Object.keys(SETS)
 // The sample product names in each set (the Template Studio gives each a photo slot)
 export const SAMPLE_PRODUCT_NAMES = Object.fromEntries(Object.entries(SETS).map(([id, set]) => [id, set.products.map(([name]) => name)]))

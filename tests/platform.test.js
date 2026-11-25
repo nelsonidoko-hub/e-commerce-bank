@@ -289,7 +289,7 @@ await check('one live demo shop per template, each with valid sample products', 
   const made = await seedDemos({ email: 'owner@platform.ng', password: 'platform-owner-pass', log: () => {} })
   assert.equal(made.length, SAMPLE_TEMPLATES.length)
   const r = await platform([PL.getDemos], {})
-  assert.equal(r.body.length, 8)
+  assert.equal(r.body.length, SAMPLE_TEMPLATES.length)
   assert.equal(r.body.find((d) => d.template === 'tech').url, 'https://demo-tech.shopsy.ng/')
   const demo = await run([P.getProducts], { host: 'demo-catalog.shopsy.ng' })
   assert.equal(demo.statusCode, 200)
@@ -314,7 +314,7 @@ await check('demos say so on the storefront, and never appear in "my shops"', as
 })
 await check('running the demo seeder again rebuilds, never duplicates', async () => {
   await seedDemos({ email: 'owner@platform.ng', log: () => {} })
-  assert.equal(await Store.countDocuments({ isDemo: true }), 8)
+  assert.equal(await Store.countDocuments({ isDemo: true }), SAMPLE_TEMPLATES.length)
   const store = await Store.findOne({ slug: 'demo-catalog' })
   assert.equal(await Product.countDocuments({ store: store._id }), 10)
 })
