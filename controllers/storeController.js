@@ -54,6 +54,12 @@ export const getStoreStatus = async (req, res) => {
 
 const DAY = 24 * 60 * 60 * 1000
 
+// Bank transfer (with full bank details) or pay on delivery is switched on
+const manualPayReady = (settings) => {
+  const bt = settings.bankTransfer || {}
+  return Boolean((bt.enabled && bt.bankName && bt.accountNumber && bt.accountName) || settings.payOnDelivery?.enabled)
+}
+
 // What's done and what's left before the shop can go live
 async function setupStatus(req) {
   const store = req.store
@@ -70,7 +76,15 @@ async function setupStatus(req) {
     { id: 'products', label: 'Add your first product', done: ownProducts > 0, link: '/admin/products/new', required: true },
     { id: 'samples', label: 'Remove the sample products', done: sampleProducts === 0, required: true },
     { id: 'contact', label: 'Add your phone number and delivery fee', done: Boolean(settings.contactPhone || settings.whatsappNumber), link: '/admin/settings' },
-    { id: 'payments', label: 'Connect your Paystack account', done: Boolean(paystack.secret), link: '/admin/payments', required: true },
+    // Any way for customers to pay: Paystack, or bank transfer / pay on
+    // delivery (for vendors still waiting for Paystack activation)
+    {
+      id: 'payments',
+      label: 'Set up how customers pay (Paystack, bank transfer or pay on delivery)',
+      done: Boolean(paystack.secret) || manualPayReady(settings),
+      link: paystack.secret ? '/admin/payments' : '/admin/settings',
+      required: true,
+    },
     { id: 'theme', label: 'Make the design yours', done: Boolean(settings.theme?.brandColor || settings.theme?.headingFont), link: '/admin/builder?tab=design' },
   ]
   const missing = steps.filter((s) => s.required && !s.done)
@@ -100,8 +114,9 @@ export const getSetup = async (req, res) => {
 
 // POST /api/store/publish  (admin)
 // Opens the shop to the public and starts the free trial (TRIAL_DAYS on the
-// server). Needs a real product, no sample products left, and a Paystack key,
-// so customers can never pay for something that doesn't exist.
+// server). Needs a real product, no sample products left, and a way to be
+// paid (Paystack, bank transfer or pay on delivery), so customers can never
+// pay for something that doesn't exist.
 export const publishStore = async (req, res) => {
   try {
     if (req.store.isDemo) return res.status(400).json({ message: 'Demo shops are managed by the platform' })

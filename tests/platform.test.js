@@ -245,12 +245,23 @@ await check('the new shop is private: visitors see offline, the owner can previe
   assert.equal(own.statusCode, 200)
   assert.equal(own.body.length, 6)
 })
-await check('checklist: publishing needs a real product, no samples, and Paystack', async () => {
+await check('checklist: publishing needs a real product, no samples, and a way to be paid', async () => {
   const s = await run([protect, admin, ST.getSetup], { host: amakaHost, token: amakaShopLogin.token })
   assert.equal(s.body.canPublish, false)
   assert.equal(s.body.blockers.length, 3)
   const p = await run([protect, admin, ST.publishStore], { host: amakaHost, token: amakaShopLogin.token })
   assert.equal(p.statusCode, 400)
+})
+await check('a way to be paid: bank transfer (with details) or pay on delivery counts, not only Paystack', async () => {
+  const payStep = async () => (await run([protect, admin, ST.getSetup], { host: amakaHost, token: amakaShopLogin.token })).body.steps.find((x) => x.id === 'payments')
+  assert.equal((await payStep()).done, false)
+  const set = (body) => run([protect, admin, S.updateSettings], { host: amakaHost, token: amakaShopLogin.token, body })
+  await set({ payOnDelivery: { enabled: true } })
+  assert.equal((await payStep()).done, true)
+  await set({ payOnDelivery: { enabled: false }, bankTransfer: { enabled: true, bankName: 'GTBank', accountNumber: '0123456789', accountName: 'Amaka' } })
+  assert.equal((await payStep()).done, true)
+  await set({ bankTransfer: { enabled: false } })
+  assert.equal((await payStep()).done, false)
 })
 await check("removing samples clears only this shop's samples and keeps categories in use", async () => {
   const beauty = await Store.findOne({ slug: 'amaka-beauty' })
