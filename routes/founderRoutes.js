@@ -1,6 +1,6 @@
 import express from 'express'
 import { platformProtect } from '../controllers/platformController.js'
-import { superadminOnly, overview, listShops, getShop, shopAction, listTeam, addDesigner, removeDesigner } from '../controllers/founderController.js'
+import { superadminOnly, overview, listShops, getShop, shopAction, listTeam, addDesigner, removeDesigner, createClientShop } from '../controllers/founderController.js'
 import { paymentSettingsLimiter } from '../middleware/rateLimiters.js'
 
 // The founder dashboard. Platform owner (superadmin) only.
@@ -13,6 +13,7 @@ router.get('/shops', listShops)
 router.get('/shops/:id', getShop)
 router.post('/shops/:id/action', paymentSettingsLimiter, shopAction)
 router.get('/team', listTeam)
+router.post('/clients', createClientShop)
 router.post('/team', addDesigner)
 router.delete('/team/:id', removeDesigner)
 

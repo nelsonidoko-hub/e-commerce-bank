@@ -137,6 +137,20 @@ export function cleanSamples(input) {
   return { heading: line(s.heading, 60), text: line(s.text, 120), categories, products }
 }
 
+// Who a private template is for: up to 50 emails
+export function cleanEmails(input) {
+  const list = Array.isArray(input) ? input : String(input || '').split(/[\s,;]+/)
+  const out = []
+  for (const raw of list) {
+    const e = String(raw || '').trim().toLowerCase()
+    if (!e) continue
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) || e.length > 254) throw new TemplateError(`"${e}" isn't a valid email`)
+    if (!out.includes(e)) out.push(e)
+  }
+  if (out.length > 50) throw new TemplateError('Up to 50 emails per private template')
+  return out
+}
+
 // ---------- the in-memory copy of Studio templates ----------
 let cache = new Map() // key -> new Studio templates { key, label, status, recipe, sampleSet, pictures }
 let edits = new Map() // built-in id -> its published edited version
@@ -144,7 +158,7 @@ let loadedAt = 0
 const MAX_AGE = 60 * 1000
 
 export async function refreshTemplates() {
-  const all = await StudioTemplate.find({}).select('key label bestFor description status recipe sampleSet pictures builtIn samples').lean()
+  const all = await StudioTemplate.find({}).select('key label bestFor description status recipe sampleSet pictures builtIn samples visibility allowedEmails').lean()
   cache = new Map(all.filter((t) => !t.builtIn).map((t) => [t.key, t]))
   edits = new Map(all.filter((t) => t.builtIn && t.status === 'published').map((t) => [t.builtIn, t]))
   loadedAt = Date.now()
@@ -166,6 +180,16 @@ const studio = (id) => cache.get(id)
 export const studioStatus = (id) => studio(id)?.status || ''
 // Can a merchant choose this template now? (built-in, or published in the Studio)
 export const isSelectableTemplate = (id) => isBuiltIn(id) || studio(id)?.status === 'published'
+// Private templates (made for particular clients)
+const isPrivate = (id) => studio(id)?.visibility === 'private'
+// In the gallery and on demo shops: built-in, or published and public
+export const isPublicTemplate = (id) => isSelectableTemplate(id) && !isPrivate(id)
+// Can this platform account (email) start a shop with it, or switch to it?
+export const canUseTemplate = (id, email) => {
+  if (!isSelectableTemplate(id)) return false
+  if (!isPrivate(id)) return true
+  return Boolean(email) && (studio(id).allowedEmails || []).includes(String(email).toLowerCase())
+}
 // Does it exist at all? (shops keep a hidden template they already use)
 export const isKnownTemplate = (id) => isBuiltIn(id) || cache.has(id)
 // The recipe a storefront needs: a Studio template's, or a built-in's edited
@@ -190,6 +214,6 @@ export const publishedStudioTemplates = () => {
   const card = (t, id) => ({ id, label: t.label, bestFor: t.bestFor, description: t.description, sampleSet: t.sampleSet, recipe: t.recipe, pictures: t.pictures || {}, samples: t.sampleSet === 'custom' ? t.samples : null })
   return [
     ...[...edits.values()].map((t) => ({ ...card(t, t.builtIn), builtIn: t.builtIn })),
-    ...[...cache.values()].filter((t) => t.status === 'published').map((t) => card(t, t.key)),
+    ...[...cache.values()].filter((t) => t.status === 'published' && t.visibility !== 'private').map((t) => card(t, t.key)),
   ]
 }

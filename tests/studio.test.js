@@ -348,6 +348,80 @@ await check('saving a published template rebuilds its demo shop straight away', 
   assert.equal((await Product.findOne({ store: demo._id })).image, photo('plantain'))
 })
 
+// ---------- private templates and shops made for clients ----------
+const vip = { ...luxe, key: 'vip-amaka', label: 'Amaka VIP', visibility: 'private', allowedEmails: 'VIP@x.ng, second@x.ng' }
+let vipId
+await check('private templates: emails checked; out of the gallery; no public demo', async () => {
+  assert.equal((await studio(SC.createStudio, founderTok, { body: { ...vip, key: 'vip-bad', allowedEmails: 'not-an-email' } })).statusCode, 400)
+  const r = await studio(SC.createStudio, founderTok, { body: vip })
+  assert.equal(r.statusCode, 201, JSON.stringify(r.body))
+  assert.deepEqual(r.body.allowedEmails, ['vip@x.ng', 'second@x.ng'])
+  vipId = r.body._id
+  const p = await studio(SC.setStudioStatus, founderTok, { params: { id: vipId }, body: { status: 'published' } })
+  assert.equal(p.body.demoUrl, null)
+  assert.equal(await Store.exists({ slug: 'demo-vip-amaka' }), null)
+  assert.ok(!(await run([PL.getStudioGallery], {}, false)).body.some((t) => t.id === 'vip-amaka'))
+  assert.ok(!(await run([PL.getDemos], {}, false)).body.some((d) => d.template === 'vip-amaka'))
+})
+await check('only the chosen emails can start a shop with a private template', async () => {
+  const other = await signup('stranger', 'Stranger Shop', 'vip-amaka')
+  assert.equal((await Settings.findOne({ store: other.shop._id })).theme.template, 'classic')
+  const vipUser = (await run([PL.signup], { body: { acceptTerms: true, name: 'Vip', email: 'vip@x.ng', password: 'vip-pass-1234', shopName: 'Vip Shop', template: 'vip-amaka' } }, false)).body
+  assert.equal((await Settings.findOne({ store: vipUser.shop._id })).theme.template, 'vip-amaka')
+  // switching in the builder: others can't, the owner keeps theirs
+  const r = await run([protect, admin, S.saveDraft], { host: `${other.shop.slug}.shopsy.ng`, token: other.account.token, body: { theme: { template: 'vip-amaka' } } })
+  assert.equal(r.statusCode, 400)
+  const ok = await run([protect, admin, S.saveDraft], { host: `${vipUser.shop.slug}.shopsy.ng`, token: vipUser.account.token, body: { theme: { template: 'vip-amaka', brandColor: '#123456' } } })
+  assert.equal(ok.statusCode, 200, JSON.stringify(ok.body))
+})
+await check('an edited built-in is always public', async () => {
+  const r = await studio(SC.createStudio, founderTok, { body: { builtIn: 'glow', label: 'Glow', recipe, visibility: 'private', allowedEmails: 'a@b.ng' } })
+  assert.equal(r.body.visibility, 'public')
+  await studio(SC.deleteStudio, founderTok, { params: { id: r.body._id } })
+})
+let clientInvite
+await check('founder makes a shop for a new client: their own account, the private template, an invite', async () => {
+  emails.length = 0
+  assert.equal((await founder(F.createClientShop, dayo.account.token, { body: {} })).statusCode, 403)
+  assert.equal((await founder(F.createClientShop, founderTok, { body: { name: 'Bisi', email: 'bad', shopName: 'X' } })).statusCode, 400)
+  assert.equal((await founder(F.createClientShop, founderTok, { body: { name: 'Bisi', email: 'second@x.ng', shopName: 'Bisi Bags', template: 'nope' } })).statusCode, 400)
+  const r = await founder(F.createClientShop, founderTok, { body: { name: 'Bisi', email: 'Second@x.ng', shopName: 'Bisi Bags', template: 'vip-amaka' } })
+  assert.equal(r.statusCode, 201, JSON.stringify(r.body))
+  assert.equal(r.body.invited, true)
+  const client = await User.findOne({ store: null, email: 'second@x.ng' })
+  assert.equal(client.role, 'merchant')
+  assert.equal(client.termsAcceptedAt ?? null, null)
+  const store = await Store.findById(r.body.shopId)
+  assert.equal(String(store.owner), String(client._id))
+  assert.equal((await Settings.findOne({ store: store._id })).theme.template, 'vip-amaka')
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const mail = emails.find((e) => /Bisi Bags/.test(e.subject))
+  clientInvite = mail.html.match(/reset-password\/([0-9a-f]+)\?invite=1/)[1]
+  assert.ok(clientInvite)
+  const log = await (await imp('models/PlatformAction.js')).default.findOne({ action: 'create-for-client' })
+  assert.match(log.details, /second@x\.ng \(new account, invite sent\)/)
+})
+await check('the client accepts the terms when setting their password, then signs in', async () => {
+  const noTerms = await run([PL.resetPassword], { body: { token: clientInvite, password: 'bisi-pass-1234' } }, false)
+  assert.equal(noTerms.statusCode, 400)
+  assert.equal(noTerms.body.field, 'terms')
+  const ok = await run([PL.resetPassword], { body: { token: clientInvite, password: 'bisi-pass-1234', acceptTerms: true } }, false)
+  assert.equal(ok.statusCode, 200)
+  assert.ok((await User.findOne({ store: null, email: 'second@x.ng' })).termsAcceptedAt)
+  assert.equal((await run([PL.login], { body: { email: 'second@x.ng', password: 'bisi-pass-1234' } }, false)).statusCode, 200)
+})
+await check('an existing account gets the new shop, no invite; a taken address gets the next free one', async () => {
+  emails.length = 0
+  const r = await founder(F.createClientShop, founderTok, { body: { name: 'Bisi', email: 'second@x.ng', shopName: 'Bisi Bags', template: 'classic' } })
+  assert.equal(r.statusCode, 201, JSON.stringify(r.body))
+  assert.equal(r.body.existingAccount, true)
+  assert.equal(r.body.invited, false)
+  assert.equal(r.body.slug, 'bisi-bags-2')
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(emails.length, 0)
+  assert.equal(await Store.countDocuments({ owner: (await User.findOne({ store: null, email: 'second@x.ng' }))._id }), 2)
+})
+
 // ---------- editing a built-in template ----------
 let freshEdit
 const freshShop = await signup('fola', 'Fola Foods', 'fresh')

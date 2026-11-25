@@ -13,6 +13,10 @@ import { getPlans } from '../utils/plans.js'
 import { storeUrl } from '../utils/storeUrl.js'
 import { addMonth, nextPeriodStart } from '../utils/billing.js'
 import { forgetStore } from '../middleware/storeMiddleware.js'
+import { createShop, checkSlug, slugify, ShopError } from '../utils/createShop.js'
+import { freshTemplates, isSelectableTemplate } from '../utils/templates.js'
+import { sendClientInvite } from '../utils/email.js'
+import { platformLink } from './platformController.js'
 
 // The founder dashboard: the whole platform at a glance, and the few things
 // only the platform owner may do to a shop. Superadmin accounts only; every
@@ -56,6 +60,54 @@ async function ownersOf(stores) {
   const ids = [...new Set(stores.map((s) => String(s.owner)))]
   const owners = await User.find({ _id: { $in: ids } }).select('name email').lean()
   return new Map(owners.map((o) => [String(o._id), o]))
+}
+
+// ---------- shops made for clients (done-for-you) ----------
+const INVITE_DAYS = 7
+
+// POST /api/founder/clients { name, email, shopName, slug?, template }
+// Makes the shop in the client's own account (a new one, with an emailed
+// invite to set their password, or their existing account). Any template can
+// be used, including private ones made for this client.
+export const createClientShop = async (req, res) => {
+  try {
+    const body = req.body || {}
+    const name = typeof body.name === 'string' ? body.name.trim().slice(0, 80) : ''
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+    const shopName = typeof body.shopName === 'string' ? body.shopName.trim().slice(0, 80) : ''
+    if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ message: "Enter the client's name and a valid email" })
+    if (!shopName) return res.status(400).json({ message: 'Give the shop a name' })
+    await freshTemplates()
+    const template = body.template || 'classic'
+    if (!isSelectableTemplate(template)) return res.status(400).json({ message: 'Choose a published template' })
+    const wanted = await checkSlug(body.slug ? String(body.slug) : slugify(shopName))
+    if (!wanted.available && !wanted.suggestion) return res.status(400).json({ message: wanted.reason || 'Choose another shop address' })
+    const slug = wanted.available ? wanted.slug : wanted.suggestion
+
+    let client = await User.findOne({ store: null, email })
+    if (client && !['merchant', 'superadmin'].includes(client.role)) return res.status(400).json({ message: "That email can't be used for a shop owner" })
+    const isNew = !client
+    if (isNew) {
+      client = await User.create({ store: null, role: 'merchant', name, email, password: crypto.randomBytes(24).toString('hex') })
+    }
+    const store = await createShop({ owner: client, name: shopName, slug, template, notifyEmail: email })
+
+    let invited = false
+    if (isNew) {
+      const raw = crypto.randomBytes(32).toString('hex')
+      await User.updateOne(
+        { _id: client._id },
+        { $set: { resetToken: crypto.createHash('sha256').update(raw).digest('hex'), resetTokenExpires: new Date(Date.now() + INVITE_DAYS * DAY) } }
+      )
+      sendClientInvite(client, shopName, platformLink(`/reset-password/${raw}?invite=1`)).catch((e) => console.error('Client invite failed:', e.message))
+      invited = true
+    }
+    await PlatformAction.create({ by: req.user._id, byEmail: req.user.email, store: store._id, storeName: store.name, action: 'create-for-client', details: `${email}${isNew ? ' (new account, invite sent)' : ' (existing account)'}` })
+    res.status(201).json({ shopId: store._id, slug: store.slug, url: storeUrl(store), invited, existingAccount: !isNew })
+  } catch (error) {
+    if (error instanceof ShopError) return res.status(400).json({ message: error.message })
+    serverError(res, error, 'createClientShop')
+  }
 }
 
 // ---------- the team (Template Studio designers) ----------

@@ -1,7 +1,7 @@
 import StudioTemplate from '../models/StudioTemplate.js'
 import Settings from '../models/Settings.js'
 import Store from '../models/Store.js'
-import { cleanKey, cleanRecipe, cleanPictures, cleanSamples, refreshTemplates, TemplateError, SAMPLE_SETS, PARTS, BUILTIN_TEMPLATES } from '../utils/templates.js'
+import { cleanKey, cleanRecipe, cleanPictures, cleanSamples, cleanEmails, refreshTemplates, TemplateError, SAMPLE_SETS, PARTS, BUILTIN_TEMPLATES } from '../utils/templates.js'
 import { SAMPLE_PRODUCT_NAMES } from '../utils/sampleData.js'
 import cloudinary from '../config/cloudinary.js'
 import { remakeDemo } from '../scripts/seedDemos.js'
@@ -50,6 +50,8 @@ async function view(t) {
     recipe: t.recipe,
     pictures: t.pictures || {},
     samples: t.samples || null,
+    visibility: t.visibility || 'public',
+    allowedEmails: t.allowedEmails || [],
     builtIn: t.builtIn || '',
     status: t.status,
     createdByName: t.createdByName,
@@ -98,6 +100,9 @@ function details(body) {
     recipe: cleanRecipe(body.recipe),
     pictures: cleanPictures(body.pictures, sampleSet),
     samples: sampleSet === 'custom' ? cleanSamples(body.samples) : null,
+    // Edited built-ins are always public (they replace a gallery template)
+    visibility: body.visibility === 'private' && !body.builtIn ? 'private' : 'public',
+    allowedEmails: body.visibility === 'private' && !body.builtIn ? cleanEmails(body.allowedEmails) : [],
   }
 }
 
@@ -113,7 +118,7 @@ export const createStudio = async (req, res) => {
     const t = await StudioTemplate.create({
       key,
       builtIn: builtIn || '',
-      ...details(req.body || {}),
+      ...details({ ...(req.body || {}), builtIn }),
       createdBy: req.user._id,
       createdByName: req.user.name,
       updatedBy: req.user._id,
@@ -135,14 +140,14 @@ export const updateStudio = async (req, res) => {
     if (t.status === 'published' && !isFounder(req.user)) {
       return res.status(403).json({ message: 'Only the founder can change a published template' })
     }
-    Object.assign(t, details(req.body || {}), { updatedBy: req.user._id })
+    Object.assign(t, details({ ...(req.body || {}), builtIn: t.builtIn }), { updatedBy: req.user._id })
     t.markModified('recipe')
     t.markModified('pictures')
     t.markModified('samples')
     await t.save()
     await refreshTemplates()
     // Live in the gallery: rebuild its demo shop so it shows the change now
-    if (t.status === 'published') await remakeDemo(req.user, templateId(t), `${t.label} demo`)
+    if (t.status === 'published' && t.visibility !== 'private') await remakeDemo(req.user, templateId(t), `${t.label} demo`)
     res.json(await view(t.toObject()))
   } catch (error) {
     serverError(res, error, 'updateStudio')
@@ -171,7 +176,8 @@ export const setStudioStatus = async (req, res) => {
     await t.save()
     await refreshTemplates()
     // A fresh demo shop on every publish, so "View demo" shows the latest
-    if (next === 'published') await remakeDemo(req.user, templateId(t), `${t.label} demo`)
+    // (private templates get no public demo shop)
+    if (next === 'published' && t.visibility !== 'private') await remakeDemo(req.user, templateId(t), `${t.label} demo`)
     // an edited built-in taken off: its demo goes back to the original look
     else if (t.builtIn && wasPublished) await remakeDemo(req.user, t.builtIn, `${t.label} demo`)
     res.json(await view(t.toObject()))

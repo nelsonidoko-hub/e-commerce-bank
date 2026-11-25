@@ -2,7 +2,7 @@ import { upsertSafely } from '../utils/tenant.js'
 import { cleanSections, liveSections, SectionError } from '../utils/sections.js'
 import { canManageStore } from '../utils/storeAccess.js'
 import Settings from '../models/Settings.js'
-import { BUILTIN_TEMPLATES, freshTemplates, isSelectableTemplate, recipeFor, sampleSetFor, studioStatus, picturesFor, samplesFor } from '../utils/templates.js'
+import { BUILTIN_TEMPLATES, freshTemplates, isSelectableTemplate, recipeFor, sampleSetFor, studioStatus, picturesFor, samplesFor, canUseTemplate } from '../utils/templates.js'
 
 // A template a shop may wear: built-in, published in the Studio, or a Studio
 // template that was later hidden (shops already using it keep it). Drafts and
@@ -270,11 +270,16 @@ export const getDraft = async (req, res) => {
 }
 
 // Checks a design from the browser: { theme?, homeSections? }
-export function cleanDesign(body, current) {
+// email: the signed-in account, for private templates (made for particular
+// clients): a shop can keep its own, but only switch to one it's allowed
+export function cleanDesign(body, current, email) {
   const next = { theme: current.theme, homeSections: current.homeSections }
   if (body.theme !== undefined) {
     if (!body.theme || typeof body.theme !== 'object') throw new SectionError('Theme must be an object')
     next.theme = { ...current.theme, ...cleanTheme(body.theme) }
+    if (next.theme.template !== current.theme?.template && !canUseTemplate(next.theme.template, email)) {
+      throw new SectionError('Unknown template')
+    }
   }
   if (body.homeSections !== undefined) next.homeSections = cleanSections(body.homeSections)
   return next
@@ -286,7 +291,7 @@ export const saveDraft = async (req, res) => {
     const settings = await getStoreSettings(req.store)
     let next
     try {
-      next = cleanDesign(req.body || {}, designOf(settings))
+      next = cleanDesign(req.body || {}, designOf(settings), req.user?.email)
     } catch (error) {
       if (error instanceof SectionError || error.message) return res.status(400).json({ message: error.message })
       throw error

@@ -9,7 +9,7 @@ import { publicPlans, trialDays, envNumber } from '../utils/plans.js'
 import { storeState, canManageStore } from '../utils/storeAccess.js'
 import { storeUrl } from '../utils/storeUrl.js'
 import { cleanTheme } from './settingsController.js'
-import { freshTemplates, isSelectableTemplate, publishedStudioTemplates } from '../utils/templates.js'
+import { freshTemplates, isSelectableTemplate, isPublicTemplate, canUseTemplate, publishedStudioTemplates } from '../utils/templates.js'
 import SavedDesign from '../models/SavedDesign.js'
 import { cleanSections } from '../utils/sections.js'
 import { sendPlatformPasswordReset } from '../utils/email.js'
@@ -74,7 +74,7 @@ export const getDemos = async (req, res) => {
     res.json(
       demos
         .map((store) => ({ template: store.slug.replace(/^demo-/, ''), name: store.name, url: storeUrl(store) }))
-        .filter((d) => isSelectableTemplate(d.template))
+        .filter((d) => isPublicTemplate(d.template))
     )
   } catch (error) {
     serverError(res, error, 'getDemos')
@@ -122,7 +122,7 @@ export const signup = async (req, res) => {
       return res.status(400).json({ message: 'Please accept the terms and the selling rules to continue', field: 'terms' })
     }
     await freshTemplates()
-    const template = isSelectableTemplate(req.body.template) ? req.body.template : 'classic'
+    const template = canUseTemplate(req.body.template, email) ? req.body.template : 'classic'
 
     const slug = isString(req.body.slug) && req.body.slug.trim() ? req.body.slug.trim().toLowerCase() : slugify(shopName)
     const check = await checkSlug(slug)
@@ -218,7 +218,7 @@ export const createAnotherShop = async (req, res) => {
     const shopName = isString(req.body.shopName) ? req.body.shopName.trim() : ''
     if (!shopName) return res.status(400).json({ message: 'Give your shop a name' })
     await freshTemplates()
-    const template = isSelectableTemplate(req.body.template) ? req.body.template : 'classic'
+    const template = canUseTemplate(req.body.template, req.user.email) ? req.body.template : 'classic'
     const slug = isString(req.body.slug) && req.body.slug.trim() ? req.body.slug.trim().toLowerCase() : slugify(shopName)
     const check = await checkSlug(slug)
     if (!check.available) return res.status(400).json({ message: check.reason, field: 'slug', suggestion: check.suggestion })
@@ -331,6 +331,11 @@ export const resetPassword = async (req, res) => {
       resetTokenExpires: { $gt: new Date() },
     })
     if (!user) return res.status(400).json({ message: 'This reset link is invalid or has expired' })
+    // An account the founder made for a client: they agree to the terms here
+    if (!user.termsAcceptedAt) {
+      if (req.body.acceptTerms !== true) return res.status(400).json({ message: 'Please accept the Terms of Service to continue', field: 'terms' })
+      user.termsAcceptedAt = new Date()
+    }
     user.password = password
     user.resetToken = undefined
     user.resetTokenExpires = undefined

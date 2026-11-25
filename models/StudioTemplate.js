@@ -23,6 +23,11 @@ const studioTemplateSchema = new mongoose.Schema(
     // When sampleSet is 'custom': the template's own starter content
     // { heading, text, categories: [{ name, label }], products: [{ name, price, category, description, image }] }
     samples: { type: mongoose.Schema.Types.Mixed, default: null },
+    // public: in the gallery for everyone. private: made for particular
+    // clients - only these platform accounts (emails) can use it, it never
+    // shows in the gallery and has no public demo shop.
+    visibility: { type: String, enum: ['public', 'private'], default: 'public' },
+    allowedEmails: { type: [String], default: [] },
     status: { type: String, enum: ['draft', 'review', 'published', 'hidden'], default: 'draft' },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     createdByName: { type: String, default: '' },

@@ -396,3 +396,20 @@ export async function sendPlatformPasswordReset(user, resetUrl) {
     ),
   })
 }
+
+// A shop the founder made for a client: invite them to set their password
+export async function sendClientInvite(user, shopName, inviteUrl) {
+  await sendEmail({
+    to: user.email,
+    storeName: platformName(),
+    subject: `Your shop "${shopName}" is ready on ${platformName()}`,
+    html: layout(
+      'Your shop is ready',
+      `<p>Hi ${esc(user.name)}, we've set up your online shop <b>${esc(shopName)}</b> on ${esc(platformName())}.</p>
+       <p>Click below to choose your password and open it. The link works once and expires in 7 days.</p>
+       <p><a href="${esc(inviteUrl)}" style="background:#111;color:#fff;padding:10px 18px;text-decoration:none;border-radius:6px;display:inline-block">Set my password</a></p>
+       <p style="color:#888;font-size:13px">Link expired? Use "Forgot password" on the login page with this email.</p>`,
+      platformName()
+    ),
+  })
+}
