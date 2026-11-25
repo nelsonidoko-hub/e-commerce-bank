@@ -63,6 +63,9 @@ const orderSchema = new mongoose.Schema(
     customerNote: { type: String, default: '', maxlength: 500, trim: true },
     // Placed while the shop was closed and set to take pre-orders
     isPreOrder: { type: Boolean, default: false },
+    // How the customer pays: online with Paystack, or by bank transfer / on
+    // delivery, which the merchant confirms by hand ("Mark as paid")
+    paymentMethod: { type: String, enum: ['paystack', 'transfer', 'delivery'], default: 'paystack' },
     paymentReference: String,
     isPaid: { type: Boolean, default: false },
     paidAt: Date,

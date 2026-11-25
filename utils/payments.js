@@ -11,7 +11,9 @@ import {
 // storeId: the shop whose Paystack account took the payment. An order from a
 // different shop is treated as not found, so one shop's payment can never mark
 // another shop's order as paid.
-export async function markOrderPaid(storeId, orderId, reference, amountKobo) {
+// options.adminAlready: the merchant was told about this order when it was
+// placed (bank transfer / on delivery), so no second "new order" email
+export async function markOrderPaid(storeId, orderId, reference, amountKobo, options = {}) {
   if (!storeId) throw new Error('markOrderPaid needs a store')
   if (!orderId || !mongoose.isValidObjectId(orderId)) return { order: null }
 
@@ -57,7 +59,7 @@ export async function markOrderPaid(storeId, orderId, reference, amountKobo) {
 
   if (status === 'paid') {
     sendOrderConfirmation(order).catch((e) => console.error('Confirmation email error:', e.message))
-    notifyAdminNewOrder(order).catch((e) => console.error('Admin email error:', e.message))
+    if (!options.adminAlready) notifyAdminNewOrder(order).catch((e) => console.error('Admin email error:', e.message))
   } else {
     sendStatusUpdate(order).catch((e) => console.error('Status email error:', e.message))
     notifyAdminRefundNeeded(order).catch((e) => console.error('Admin email error:', e.message))

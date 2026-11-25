@@ -5,6 +5,7 @@ import {
   getOrderById,
   getAllOrders,
   updateOrderStatus,
+  markManualPaid,
   getOrdersByUserId,
   cancelMyOrder,
 } from '../controllers/orderController.js'
@@ -18,6 +19,7 @@ router.get('/user/:userId', protect, admin, getOrdersByUserId)
 router.get('/', protect, admin, getAllOrders)
 router.put('/:id/cancel', protect, cancelMyOrder)
 router.put('/:id/status', protect, admin, updateOrderStatus)
+router.put('/:id/mark-paid', protect, admin, markManualPaid)
 router.get('/:id', protect, getOrderById)
 
 export default router

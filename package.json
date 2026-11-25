@@ -4,7 +4,7 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "test": "node tests/isolation.test.js && node tests/platform.test.js && node tests/builder.test.js && node tests/billing.test.js && node tests/founder.test.js && node tests/market.test.js && node tests/studio.test.js",
+    "test": "node tests/isolation.test.js && node tests/platform.test.js && node tests/builder.test.js && node tests/billing.test.js && node tests/founder.test.js && node tests/market.test.js && node tests/studio.test.js && node tests/manualpay.test.js",
     "test:isolation": "node tests/isolation.test.js",
     "test:platform": "node tests/platform.test.js",
     "test:builder": "node tests/builder.test.js",
@@ -17,7 +17,8 @@
     "dev": "nodemon server.js",
     "test:founder": "node tests/founder.test.js",
     "test:market": "node tests/market.test.js",
-    "test:studio": "node tests/studio.test.js"
+    "test:studio": "node tests/studio.test.js",
+    "test:manualpay": "node tests/manualpay.test.js"
   },
   "keywords": [],
   "author": "",

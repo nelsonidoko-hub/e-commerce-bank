@@ -49,6 +49,22 @@ const settingsSchema = new mongoose.Schema(
       label: str('VAT'),
     },
 
+    // Ways to pay besides Paystack (good for vendors still waiting for
+    // Paystack activation). The merchant confirms these payments by hand.
+    bankTransfer: {
+      enabled: { type: Boolean, default: false },
+      bankName: str(),
+      accountNumber: str(),
+      accountName: str(),
+      note: str(),
+      // Unpaid transfer orders are cancelled (and stock released) after this
+      holdHours: { type: Number, default: 24, min: 1, max: 72 },
+    },
+    payOnDelivery: {
+      enabled: { type: Boolean, default: false },
+      note: str('Pay the rider by cash or transfer when your order arrives.'),
+    },
+
     pickup: {
       enabled: { type: Boolean, default: true },
       name: str('Main Retail Store'),

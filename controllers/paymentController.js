@@ -37,6 +37,9 @@ export const initializePayment = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized' })
     }
     if (order.isPaid) return res.status(400).json({ message: 'This order is already paid' })
+    if (order.paymentMethod && order.paymentMethod !== 'paystack') {
+      return res.status(400).json({ message: 'This order is paid by bank transfer or on delivery, not online' })
+    }
     if (order.status === 'cancelled') {
       return res.status(400).json({ message: 'This order expired or was cancelled. Please place it again.' })
     }

@@ -2,6 +2,7 @@ import { upsertSafely } from '../utils/tenant.js'
 import { cleanSections, liveSections, SectionError } from '../utils/sections.js'
 import { canManageStore } from '../utils/storeAccess.js'
 import Settings from '../models/Settings.js'
+import { resolvePaystack } from '../utils/paystackConfig.js'
 import { BUILTIN_TEMPLATES, freshTemplates, isSelectableTemplate, recipeFor, sampleSetFor, studioStatus, picturesFor, samplesFor, canUseTemplate } from '../utils/templates.js'
 
 // A template a shop may wear: built-in, published in the Studio, or a Studio
@@ -27,6 +28,8 @@ const SECTION_FIELDS = {
   shipping: ['flatRate', 'freeShippingThreshold'],
   tax: ['rate', 'label'],
   pickup: ['enabled', 'name', 'address', 'readyTime'],
+  bankTransfer: ['enabled', 'bankName', 'accountNumber', 'accountName', 'note', 'holdHours'],
+  payOnDelivery: ['enabled', 'note'],
   announcement: ['enabled', 'text', 'link'],
   homeArrivals: ['enabled', 'title', 'subtitle', 'count'],
   homeBestSellers: ['enabled', 'label', 'title'],
@@ -40,9 +43,12 @@ const NUMBER_FIELDS = new Set([
   'shipping.freeShippingThreshold',
   'tax.rate',
   'homeArrivals.count',
+  'bankTransfer.holdHours',
 ])
 const BOOLEAN_FIELDS = new Set([
   'pickup.enabled',
+  'bankTransfer.enabled',
+  'payOnDelivery.enabled',
   'announcement.enabled',
   'homeArrivals.enabled',
   'homeBestSellers.enabled',
@@ -163,7 +169,9 @@ export const getSettings = async (req, res) => {
     const settings = await getStoreSettings(req.store)
     await freshTemplates()
     const preview = req.query?.preview === '1' && canManageStore(req.user, req.store)
-    res.json(storefrontSettings(settings, { preview }))
+    // Checkout needs to know whether online payment (Paystack) is set up
+    const paystackReady = await resolvePaystack(req.store._id).then((r) => r.source !== 'none').catch(() => false)
+    res.json({ ...storefrontSettings(settings, { preview }), paystackReady })
   } catch (error) {
     res.status(500).json({ message: error.message })
   }
@@ -196,6 +204,10 @@ export const updateSettings = async (req, res) => {
           if (path === 'tax.rate' && value > 100) {
             return res.status(400).json({ message: 'Tax rate cannot be more than 100%' })
           }
+          if (path === 'bankTransfer.holdHours') {
+            value = Math.round(value)
+            if (value < 1 || value > 72) return res.status(400).json({ message: 'Hold transfer orders for 1 to 72 hours' })
+          }
           if (path === 'homeArrivals.count') {
             value = Math.round(value)
             if (value < 1 || value > 24) {
@@ -207,11 +219,20 @@ export const updateSettings = async (req, res) => {
         } else if (BOOLEAN_FIELDS.has(path)) {
           value = Boolean(value)
         } else {
-          value = String(value).trim()
+          value = String(value).trim().slice(0, 300)
         }
 
         settings[section][field] = value
       }
+    }
+
+    // Bank transfer needs real details before it can be switched on
+    const bt = settings.bankTransfer || {}
+    if (bt.accountNumber && !/^\d{10}$/.test(bt.accountNumber)) {
+      return res.status(400).json({ message: 'The account number must be 10 digits' })
+    }
+    if (bt.enabled && !(bt.bankName && bt.accountNumber && bt.accountName)) {
+      return res.status(400).json({ message: 'Add the bank name, account number and account name to turn on bank transfer' })
     }
 
     // Theme and hours have their own, stricter rules

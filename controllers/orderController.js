@@ -5,7 +5,8 @@ import { canManageStore } from '../utils/storeAccess.js'
 import Counter from '../models/Counter.js'
 import Product from '../models/Product.js'
 import { restoreStock } from '../utils/stock.js'
-import { sendStatusUpdate, sendPickupReady } from '../utils/email.js'
+import { sendStatusUpdate, sendPickupReady, sendManualOrderReceived, notifyAdminNewOrder } from '../utils/email.js'
+import { markOrderPaid } from '../utils/payments.js'
 import { HOLD_MINUTES } from '../utils/expireOrders.js'
 import { getStoreSettings } from './settingsController.js'
 import { applyDiscount } from '../utils/discounts.js'
@@ -53,6 +54,16 @@ export const createOrder = async (req, res) => {
 
     if (method === 'pickup' && !settings.pickup.enabled) {
       return res.status(400).json({ message: 'Store pickup is not available right now' })
+    }
+
+    // How they'll pay: Paystack, or bank transfer / on delivery if the shop offers it
+    const paymentMethod = ['transfer', 'delivery'].includes(req.body.paymentMethod) ? req.body.paymentMethod : 'paystack'
+    const bt = settings.bankTransfer || {}
+    if (paymentMethod === 'transfer' && !(bt.enabled && bt.bankName && bt.accountNumber && bt.accountName)) {
+      return res.status(400).json({ message: 'Bank transfer is not available for this shop' })
+    }
+    if (paymentMethod === 'delivery' && !settings.payOnDelivery?.enabled) {
+      return res.status(400).json({ message: 'Pay on delivery is not available for this shop' })
     }
 
     // Opening hours: checked here, before any stock is reserved
@@ -156,11 +167,22 @@ export const createOrder = async (req, res) => {
       customerNote,
       isPreOrder,
       statusHistory: [
-        { status: 'pending', note: isPreOrder ? 'Pre-order placed while closed' : 'Order placed', at: new Date() },
+        { status: 'pending', note: `${isPreOrder ? 'Pre-order placed while closed' : 'Order placed'}${paymentMethod === 'transfer' ? ' (pay by bank transfer)' : paymentMethod === 'delivery' ? ' (pay on delivery)' : ''}`, at: new Date() },
       ],
-      expiresAt: new Date(Date.now() + HOLD_MINUTES * 60 * 1000),
+      paymentMethod,
+      // Paystack: 30 minutes to pay. Transfer: the shop's hold time. On
+      // delivery: no deadline (paid when it arrives)
+      ...(paymentMethod === 'delivery'
+        ? {}
+        : { expiresAt: new Date(Date.now() + (paymentMethod === 'transfer' ? Math.min(Math.max(bt.holdHours || 24, 1), 72) * 3600 * 1000 : HOLD_MINUTES * 60 * 1000)) }),
     })
 
+    if (paymentMethod !== 'paystack') {
+      // Paystack orders are confirmed when paid; these are confirmed now, with how to pay
+      const full = await Order.findOne({ store: req.store._id, _id: order._id }).populate('user', 'name email')
+      sendManualOrderReceived(full).catch((e) => console.error('Order email error:', e.message))
+      notifyAdminNewOrder(full).catch((e) => console.error('Admin email error:', e.message))
+    }
     res.status(201).json(order)
   } catch (error) {
     await restoreStock(req.store._id, reserved).catch(() => {})
@@ -227,7 +249,8 @@ export const updateOrderStatus = async (req, res) => {
       return res.status(400).json({ message: 'Cancelled orders cannot be changed' })
     }
 
-    if (status && NEEDS_PAYMENT.includes(status) && !order.isPaid) {
+    // (pay-on-delivery orders are sent out first and paid when they arrive)
+    if (status && NEEDS_PAYMENT.includes(status) && !order.isPaid && order.paymentMethod !== 'delivery') {
       return res.status(400).json({ message: 'This order has not been paid yet' })
     }
 
@@ -297,5 +320,25 @@ export const cancelMyOrder = async (req, res) => {
     res.json(order)
   } catch (error) {
     res.status(500).json({ message: error.message })
+  }
+}
+// PUT /api/orders/:id/mark-paid  (shop admin)
+// For bank transfer and pay-on-delivery orders: the merchant confirms the
+// money arrived. Same rules as a Paystack payment (stock, late payments, emails).
+export const markManualPaid = async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ message: 'Order not found' })
+    const order = await Order.findOne(byId(req, req.params.id))
+    if (!order) return res.status(404).json({ message: 'Order not found' })
+    if (!['transfer', 'delivery'].includes(order.paymentMethod)) {
+      return res.status(400).json({ message: 'Paystack orders are marked paid automatically' })
+    }
+    if (order.isPaid) return res.status(400).json({ message: 'This order is already paid' })
+    const reference = `${order.paymentMethod}-${Date.now()}`
+    const result = await markOrderPaid(req.store._id, order._id, reference, Math.round(order.totalPrice * 100), { adminAlready: true })
+    res.json(result.order)
+  } catch (error) {
+    console.error('markManualPaid:', error)
+    res.status(500).json({ message: 'Something went wrong. Please try again.' })
   }
 }

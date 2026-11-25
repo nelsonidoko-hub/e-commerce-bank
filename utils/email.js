@@ -1,6 +1,7 @@
 import { getStoreSettings } from '../controllers/settingsController.js'
 import Store from '../models/Store.js'
 import { storeUrl } from './storeUrl.js'
+import Settings from '../models/Settings.js'
 
 const esc = (s = '') =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
@@ -195,6 +196,45 @@ export async function sendOrderConfirmation(order) {
     html: layout(
       `Thanks for your order, ${order.user.name}!`,
       `<p>We have received your payment for order <b>${esc(orderRef(order))}</b>. ${followUp}</p>
+       ${itemsTable(order)}
+       ${extrasBlock(order)}
+       ${deliveryBlock(order)}
+       ${viewButton(order, store)}`,
+      store.name
+    ),
+  })
+}
+
+// Bank transfer / pay on delivery: the order is in, here's how to pay
+export async function sendManualOrderReceived(order) {
+  const store = await loadStore(order.store)
+  const settings = await Settings.findOne({ store: order.store }).lean()
+  const naira = (n) => `₦${Number(n || 0).toLocaleString('en-NG')}`
+  let howToPay
+  if (order.paymentMethod === 'transfer') {
+    const bt = settings?.bankTransfer || {}
+    const deadline = order.expiresAt ? new Date(order.expiresAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Lagos' }) : ''
+    howToPay = `<p>Please transfer <b>${esc(naira(order.totalPrice))}</b> to:</p>
+       <table style="border-collapse:collapse;margin:8px 0 12px">
+         <tr><td style="padding:2px 12px 2px 0;color:#666">Bank</td><td><b>${esc(bt.bankName)}</b></td></tr>
+         <tr><td style="padding:2px 12px 2px 0;color:#666">Account number</td><td><b>${esc(bt.accountNumber)}</b></td></tr>
+         <tr><td style="padding:2px 12px 2px 0;color:#666">Account name</td><td><b>${esc(bt.accountName)}</b></td></tr>
+         <tr><td style="padding:2px 12px 2px 0;color:#666">Narration</td><td><b>${esc(orderRef(order))}</b></td></tr>
+       </table>
+       ${bt.note ? `<p>${esc(bt.note)}</p>` : ''}
+       ${deadline ? `<p>We'll hold your items until <b>${esc(deadline)}</b>. We'll email you when the payment is confirmed.</p>` : ''}`
+  } else {
+    howToPay = `<p>You'll pay <b>${esc(naira(order.totalPrice))}</b> when your order arrives.</p>${settings?.payOnDelivery?.note ? `<p>${esc(settings.payOnDelivery.note)}</p>` : ''}`
+  }
+  await sendEmail({
+    to: order.user.email,
+    replyTo: store.notifyEmail,
+    storeName: store.name,
+    subject: `Order ${orderRef(order)} received${order.paymentMethod === 'transfer' ? ': how to pay' : ''}`,
+    html: layout(
+      `Thanks for your order, ${order.user.name}!`,
+      `<p>We've received order <b>${esc(orderRef(order))}</b>.</p>
+       ${howToPay}
        ${itemsTable(order)}
        ${extrasBlock(order)}
        ${deliveryBlock(order)}
