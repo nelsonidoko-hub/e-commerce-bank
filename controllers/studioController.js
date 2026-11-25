@@ -1,7 +1,7 @@
 import StudioTemplate from '../models/StudioTemplate.js'
 import Settings from '../models/Settings.js'
 import Store from '../models/Store.js'
-import { cleanKey, cleanRecipe, cleanPictures, refreshTemplates, TemplateError, SAMPLE_SETS, PARTS, BUILTIN_TEMPLATES } from '../utils/templates.js'
+import { cleanKey, cleanRecipe, cleanPictures, cleanSamples, refreshTemplates, TemplateError, SAMPLE_SETS, PARTS, BUILTIN_TEMPLATES } from '../utils/templates.js'
 import { SAMPLE_PRODUCT_NAMES } from '../utils/sampleData.js'
 import cloudinary from '../config/cloudinary.js'
 import { remakeDemo } from '../scripts/seedDemos.js'
@@ -49,6 +49,7 @@ async function view(t) {
     sampleSet: t.sampleSet,
     recipe: t.recipe,
     pictures: t.pictures || {},
+    samples: t.samples || null,
     builtIn: t.builtIn || '',
     status: t.status,
     createdByName: t.createdByName,
@@ -89,7 +90,15 @@ function details(body) {
   const label = text(body.label, 40)
   if (!label) throw new TemplateError('Give the template a name')
   const sampleSet = SAMPLE_SETS[body.sampleSet] ? body.sampleSet : 'classic'
-  return { label, bestFor: text(body.bestFor, 60), description: text(body.description, 240), sampleSet, recipe: cleanRecipe(body.recipe), pictures: cleanPictures(body.pictures, sampleSet) }
+  return {
+    label,
+    bestFor: text(body.bestFor, 60),
+    description: text(body.description, 240),
+    sampleSet,
+    recipe: cleanRecipe(body.recipe),
+    pictures: cleanPictures(body.pictures, sampleSet),
+    samples: sampleSet === 'custom' ? cleanSamples(body.samples) : null,
+  }
 }
 
 // POST /api/studio  { key, label, bestFor, description, sampleSet, recipe, pictures }
@@ -129,6 +138,7 @@ export const updateStudio = async (req, res) => {
     Object.assign(t, details(req.body || {}), { updatedBy: req.user._id })
     t.markModified('recipe')
     t.markModified('pictures')
+    t.markModified('samples')
     await t.save()
     await refreshTemplates()
     res.json(await view(t.toObject()))

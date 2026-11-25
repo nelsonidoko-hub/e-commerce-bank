@@ -274,6 +274,49 @@ await check('uploading a template photo returns its address', async () => {
   assert.match(ok.body.url, /^https:\/\/res\.cloudinary\.com\/.+platform\/templates/)
 })
 
+// ---------- "My own products" ----------
+const Category = (await imp('models/Category.js')).default
+const farm = {
+  key: 'farm-fresh', label: 'Farm Fresh', bestFor: 'Farm produce', sampleSet: 'custom', recipe,
+  samples: {
+    heading: 'Straight from the farm',
+    text: 'Harvested this week',
+    categories: [{ label: 'Vegetables' }, { label: 'Grains & Tubers' }, { label: 'Vegetables' }],
+    products: [
+      { name: 'Fresh Tomatoes (Basket)', price: 18000, category: 'Vegetables', description: 'Ripe, firm and red.', image: photo('tomato') },
+      { name: 'Yam Tubers (5)', price: '12000', category: 'grains-tubers' },
+      { name: 'Ugu Leaves', price: 1500, category: 'Unknown' },
+    ],
+  },
+}
+await check('own products are checked: a category, a product, prices, unique names, safe photos', async () => {
+  const bad = async (samples) => (await studio(SC.createStudio, founderTok, { body: { ...farm, key: 'farm-bad', samples } })).statusCode
+  assert.equal(await bad({ categories: [], products: farm.samples.products }), 400)
+  assert.equal(await bad({ categories: farm.samples.categories, products: [] }), 400)
+  assert.equal(await bad({ categories: farm.samples.categories, products: [{ name: 'Yam', price: 'lots' }] }), 400)
+  assert.equal(await bad({ categories: farm.samples.categories, products: [{ name: 'Yam', price: 1 }, { name: 'Yam', price: 2 }] }), 400)
+  assert.equal(await bad({ categories: farm.samples.categories, products: [{ name: 'Yam', price: 1, image: 'http://x.test/a.jpg' }] }), 400)
+})
+await check("own products: categories (the shop menu), products, prices and photos go into new shops", async () => {
+  const r = await studio(SC.createStudio, founderTok, { body: farm })
+  assert.equal(r.statusCode, 201, JSON.stringify(r.body))
+  assert.deepEqual(r.body.samples.categories.map((c) => c.label), ['Vegetables', 'Grains & Tubers'], 'duplicates dropped')
+  assert.equal(r.body.samples.products[2].category, 'vegetables', 'unknown category -> the first one')
+  await studio(SC.setStudioStatus, founderTok, { params: { id: r.body._id }, body: { status: 'published' } })
+  const g = (await run([PL.getStudioGallery], {}, false)).body.find((t) => t.id === 'farm-fresh')
+  assert.equal(g.samples.products.length, 3)
+  const shop = await signup('farmer', 'Farmer Joe', 'farm-fresh')
+  const cats = (await Category.find({ store: shop.shop._id })).map((c) => c.label).sort()
+  assert.deepEqual(cats, ['Grains & Tubers', 'Vegetables'])
+  const products = await Product.find({ store: shop.shop._id })
+  assert.deepEqual(products.map((p) => p.name).sort(), ['Fresh Tomatoes (Basket)', 'Ugu Leaves', 'Yam Tubers (5)'])
+  assert.equal(products.find((p) => p.name.startsWith('Fresh Tomatoes')).image, photo('tomato'))
+  assert.equal(products.find((p) => p.name.startsWith('Yam')).price, 12000)
+  assert.match(products.find((p) => p.name === 'Ugu Leaves').image, /^data:image\/svg/, 'no photo: a drawn picture')
+  assert.equal((await HeroSlide.findOne({ store: shop.shop._id })).heading, 'Straight from the farm')
+  assert.equal((await run([S.getSettings], { host: `${shop.shop.slug}.shopsy.ng`, token: shop.account.token })).body.theme.samples.categories.length, 2)
+})
+
 // ---------- editing a built-in template ----------
 let freshEdit
 const freshShop = await signup('fola', 'Fola Foods', 'fresh')

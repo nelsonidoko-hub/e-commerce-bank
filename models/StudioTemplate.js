@@ -20,6 +20,9 @@ const studioTemplateSchema = new mongoose.Schema(
     // Published, it replaces the built-in look everywhere; deleting it brings
     // the original back.
     builtIn: { type: String, default: '' },
+    // When sampleSet is 'custom': the template's own starter content
+    // { heading, text, categories: [{ name, label }], products: [{ name, price, category, description, image }] }
+    samples: { type: mongoose.Schema.Types.Mixed, default: null },
     status: { type: String, enum: ['draft', 'review', 'published', 'hidden'], default: 'draft' },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     createdByName: { type: String, default: '' },

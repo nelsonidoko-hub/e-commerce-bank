@@ -2,7 +2,7 @@ import { upsertSafely } from '../utils/tenant.js'
 import { cleanSections, liveSections, SectionError } from '../utils/sections.js'
 import { canManageStore } from '../utils/storeAccess.js'
 import Settings from '../models/Settings.js'
-import { BUILTIN_TEMPLATES, freshTemplates, isSelectableTemplate, recipeFor, sampleSetFor, studioStatus, picturesFor } from '../utils/templates.js'
+import { BUILTIN_TEMPLATES, freshTemplates, isSelectableTemplate, recipeFor, sampleSetFor, studioStatus, picturesFor, samplesFor } from '../utils/templates.js'
 
 // A template a shop may wear: built-in, published in the Studio, or a Studio
 // template that was later hidden (shops already using it keep it). Drafts and
@@ -13,9 +13,9 @@ const isUsableTemplate = (t) => isSelectableTemplate(t) || studioStatus(t) === '
 // the theme. The recipe is never saved on the shop: it's always the latest.
 function withRecipe(theme) {
   if (!theme) return theme
-  const { recipe: _ignored, sampleSet: _ignored2, pictures: _ignored3, ...rest } = theme
+  const { recipe: _ignored, sampleSet: _ignored2, pictures: _ignored3, samples: _ignored4, ...rest } = theme
   const recipe = recipeFor(rest.template)
-  return recipe ? { ...rest, recipe, sampleSet: sampleSetFor(rest.template), pictures: picturesFor(rest.template) || {} } : rest
+  return recipe ? { ...rest, recipe, sampleSet: sampleSetFor(rest.template), pictures: picturesFor(rest.template) || {}, samples: samplesFor(rest.template) } : rest
 }
 
 const TOP_LEVEL_FIELDS = ['storeName', 'contactEmail', 'contactPhone', 'whatsappNumber']

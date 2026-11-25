@@ -201,22 +201,36 @@ export const SAMPLE_PRODUCT_NAMES = Object.fromEntries(Object.entries(SETS).map(
 
 // Everything needed to fill a new shop: categories, products, a banner slide
 // and homepage pictures. Plain data; createShop.js saves it.
+// A Template Studio template's own starter content ("My own products") in
+// the same shape as the built-in sets
+function customSet(custom) {
+  return {
+    colours: ['#a7f3d0', '#047857'],
+    categories: custom.categories.map((c) => [c.name, c.label]),
+    row: custom.categories[0]?.name || '',
+    products: custom.products.map((p) => [p.name, p.price, p.category, one(), p.description || '', p.image ? { photo: p.image } : {}]),
+    heading: custom.heading,
+    text: custom.text,
+  }
+}
+
 // pictures: real photos from the Template Studio (optional), used instead of
-// the drawn pictures wherever one is given
-export function sampleContent(template, shopName, pictures = null) {
+// the drawn pictures wherever one is given. custom: the template's own
+// products when template is 'custom'.
+export function sampleContent(template, shopName, pictures = null, custom = null) {
   const photo = pictures && typeof pictures === 'object' ? pictures : {}
-  const set = SETS[template] || SETS.classic
+  const set = template === 'custom' && custom?.products?.length ? customSet(custom) : SETS[template] || SETS.classic
   const [from, to] = set.colours
 
   const categories = set.categories.map(([name, label]) => ({ name, label, parent: null, isSample: true }))
 
-  const products = set.products.map(([name, price, category, sizes, description, extra = {}], i) => ({
+  const products = set.products.map(([name, price, category, sizes, description, { photo: ownPhoto, ...extra } = {}], i) => ({
     name,
     price,
     category,
     sizes,
     description,
-    image: photo.products?.[name] || samplePicture(name, from, to),
+    image: ownPhoto || photo.products?.[name] || samplePicture(name, from, to),
     hoverImage: '',
     images: [],
     // a couple of items on sale so the sale styling shows
@@ -229,8 +243,8 @@ export function sampleContent(template, shopName, pictures = null) {
   const slide = {
     mediaType: 'image',
     mediaUrl: photo.hero || banner,
-    heading: `Welcome to ${shopName}`,
-    text: 'Fresh picks, fair prices, fast delivery.',
+    heading: set.heading || `Welcome to ${shopName}`,
+    text: set.text || 'Fresh picks, fair prices, fast delivery.',
     buttonLabel: 'Shop now',
     buttonLink: '/shop',
     order: 0,

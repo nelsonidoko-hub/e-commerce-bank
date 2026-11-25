@@ -30,6 +30,7 @@ export const SAMPLE_SETS = {
   glow: 'Beauty and skincare',
   tech: 'Phones and gadgets',
   playful: 'Babies and kids',
+  custom: 'My own products (type them in)',
 }
 
 export class TemplateError extends Error {}
@@ -100,6 +101,33 @@ export function cleanPictures(input, sampleSet) {
   return out
 }
 
+// "My own products": the template's own categories (they become the shop's
+// menu), products, prices and photos
+export function cleanSamples(input) {
+  const s = input && typeof input === 'object' ? input : {}
+  const line = (v, max) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ').slice(0, max) : '')
+  const slug = (v) => v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
+  const categories = []
+  for (const c of Array.isArray(s.categories) ? s.categories.slice(0, 8) : []) {
+    const label = line(c?.label, 30)
+    const name = slug(label)
+    if (label && name && !categories.some((x) => x.name === name)) categories.push({ name, label })
+  }
+  if (!categories.length) throw new TemplateError('Add at least one category (it becomes the shop menu)')
+  const products = []
+  for (const p of Array.isArray(s.products) ? s.products.slice(0, 12) : []) {
+    const name = line(p?.name, 60)
+    if (!name) continue
+    if (products.some((x) => x.name === name)) throw new TemplateError(`Two products are called "${name}"`)
+    const price = Math.round(Number(p.price))
+    if (!Number.isFinite(price) || price < 0 || price > 100000000) throw new TemplateError(`Give "${name}" a price`)
+    const category = categories.find((c) => c.name === slug(line(p.category, 40)) || c.label === line(p.category, 30))?.name || categories[0].name
+    products.push({ name, price, category, description: line(p.description, 200), image: photoUrl(p.image) })
+  }
+  if (!products.length) throw new TemplateError('Add at least one product')
+  return { heading: line(s.heading, 60), text: line(s.text, 120), categories, products }
+}
+
 // ---------- the in-memory copy of Studio templates ----------
 let cache = new Map() // key -> new Studio templates { key, label, status, recipe, sampleSet, pictures }
 let edits = new Map() // built-in id -> its published edited version
@@ -107,7 +135,7 @@ let loadedAt = 0
 const MAX_AGE = 60 * 1000
 
 export async function refreshTemplates() {
-  const all = await StudioTemplate.find({}).select('key label bestFor description status recipe sampleSet pictures builtIn').lean()
+  const all = await StudioTemplate.find({}).select('key label bestFor description status recipe sampleSet pictures builtIn samples').lean()
   cache = new Map(all.filter((t) => !t.builtIn).map((t) => [t.key, t]))
   edits = new Map(all.filter((t) => t.builtIn && t.status === 'published').map((t) => [t.builtIn, t]))
   loadedAt = Date.now()
@@ -137,15 +165,20 @@ export const recipeFor = (id) => (isBuiltIn(id) ? edits.get(id)?.recipe || null 
 // Which starter products to use
 export const sampleSetFor = (id) => {
   const t = isBuiltIn(id) ? edits.get(id) : studio(id)
-  if (t && SAMPLE_SETS[t.sampleSet]) return t.sampleSet
+  if (t && SAMPLE_SETS[t.sampleSet] && (t.sampleSet !== 'custom' || t.samples?.products?.length)) return t.sampleSet
   return isBuiltIn(id) ? id : 'classic'
+}
+// The template's own products ("My own products"), or null
+export const samplesFor = (id) => {
+  const t = isBuiltIn(id) ? edits.get(id) : studio(id)
+  return t?.sampleSet === 'custom' ? t.samples || null : null
 }
 // Real photos for new shops (null = drawn pictures)
 export const picturesFor = (id) => (isBuiltIn(id) ? edits.get(id)?.pictures : studio(id)?.pictures) || null
 
 // For the gallery: new published templates, plus edited built-ins (builtIn set)
 export const publishedStudioTemplates = () => {
-  const card = (t, id) => ({ id, label: t.label, bestFor: t.bestFor, description: t.description, sampleSet: t.sampleSet, recipe: t.recipe, pictures: t.pictures || {} })
+  const card = (t, id) => ({ id, label: t.label, bestFor: t.bestFor, description: t.description, sampleSet: t.sampleSet, recipe: t.recipe, pictures: t.pictures || {}, samples: t.sampleSet === 'custom' ? t.samples : null })
   return [
     ...[...edits.values()].map((t) => ({ ...card(t, t.builtIn), builtIn: t.builtIn })),
     ...[...cache.values()].filter((t) => t.status === 'published').map((t) => card(t, t.key)),
