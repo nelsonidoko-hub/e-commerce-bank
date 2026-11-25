@@ -141,6 +141,8 @@ export const updateStudio = async (req, res) => {
     t.markModified('samples')
     await t.save()
     await refreshTemplates()
+    // Live in the gallery: rebuild its demo shop so it shows the change now
+    if (t.status === 'published') await remakeDemo(req.user, templateId(t), `${t.label} demo`)
     res.json(await view(t.toObject()))
   } catch (error) {
     serverError(res, error, 'updateStudio')

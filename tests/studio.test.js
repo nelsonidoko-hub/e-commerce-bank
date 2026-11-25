@@ -317,6 +317,17 @@ await check("own products: categories (the shop menu), products, prices and phot
   assert.equal((await run([S.getSettings], { host: `${shop.shop.slug}.shopsy.ng`, token: shop.account.token })).body.theme.samples.categories.length, 2)
 })
 
+await check('saving a published template rebuilds its demo shop straight away', async () => {
+  const t = await (await imp('models/StudioTemplate.js')).default.findOne({ key: 'farm-fresh' })
+  const body = { ...farm, samples: { ...farm.samples, products: [{ name: 'Sweet Plantain (Bunch)', price: 3000, category: 'Vegetables', image: photo('plantain') }] } }
+  const r = await studio(SC.updateStudio, founderTok, { params: { id: String(t._id) }, body })
+  assert.equal(r.statusCode, 200, JSON.stringify(r.body))
+  const demo = await Store.findOne({ slug: 'demo-farm-fresh' })
+  const names = (await Product.find({ store: demo._id })).map((p) => p.name)
+  assert.deepEqual(names, ['Sweet Plantain (Bunch)'])
+  assert.equal((await Product.findOne({ store: demo._id })).image, photo('plantain'))
+})
+
 // ---------- editing a built-in template ----------
 let freshEdit
 const freshShop = await signup('fola', 'Fola Foods', 'fresh')
