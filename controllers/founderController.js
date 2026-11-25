@@ -93,17 +93,20 @@ export const createClientShop = async (req, res) => {
     const store = await createShop({ owner: client, name: shopName, slug, template, notifyEmail: email })
 
     let invited = false
+    let inviteUrl = ''
     if (isNew) {
       const raw = crypto.randomBytes(32).toString('hex')
       await User.updateOne(
         { _id: client._id },
         { $set: { resetToken: crypto.createHash('sha256').update(raw).digest('hex'), resetTokenExpires: new Date(Date.now() + INVITE_DAYS * DAY) } }
       )
-      sendClientInvite(client, shopName, platformLink(`/reset-password/${raw}?invite=1`)).catch((e) => console.error('Client invite failed:', e.message))
+      // Also returned to the founder, to send by WhatsApp if the email doesn't arrive
+      inviteUrl = platformLink(`/reset-password/${raw}?invite=1`)
+      sendClientInvite(client, shopName, inviteUrl).catch((e) => console.error('Client invite failed:', e.message))
       invited = true
     }
     await PlatformAction.create({ by: req.user._id, byEmail: req.user.email, store: store._id, storeName: store.name, action: 'create-for-client', details: `${email}${isNew ? ' (new account, invite sent)' : ' (existing account)'}` })
-    res.status(201).json({ shopId: store._id, slug: store.slug, url: storeUrl(store), invited, existingAccount: !isNew })
+    res.status(201).json({ shopId: store._id, slug: store.slug, url: storeUrl(store), invited, inviteUrl, existingAccount: !isNew })
   } catch (error) {
     if (error instanceof ShopError) return res.status(400).json({ message: error.message })
     serverError(res, error, 'createClientShop')

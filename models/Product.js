@@ -33,7 +33,7 @@ const productSchema = new mongoose.Schema(
 // throwing synchronously is how you fail a pre-save hook now.
 productSchema.pre('save', function () {
   if (this.onSale && this.oldPrice != null && this.oldPrice <= this.price) {
-    throw new Error('oldPrice must be greater than price when onSale is true')
+    throw new Error('The price before the sale must be higher than the sale price')
   }
 })
 

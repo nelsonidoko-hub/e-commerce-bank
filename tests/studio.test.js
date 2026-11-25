@@ -397,6 +397,7 @@ await check('founder makes a shop for a new client: their own account, the priva
   await new Promise((resolve) => setTimeout(resolve, 20))
   const mail = emails.find((e) => /Bisi Bags/.test(e.subject))
   clientInvite = mail.html.match(/reset-password\/([0-9a-f]+)\?invite=1/)[1]
+  assert.ok(r.body.inviteUrl.endsWith(`/reset-password/${clientInvite}?invite=1`), 'the founder gets the same link to share')
   assert.ok(clientInvite)
   const log = await (await imp('models/PlatformAction.js')).default.findOne({ action: 'create-for-client' })
   assert.match(log.details, /second@x\.ng \(new account, invite sent\)/)
