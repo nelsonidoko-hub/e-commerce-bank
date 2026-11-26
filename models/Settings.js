@@ -119,6 +119,9 @@ const settingsSchema = new mongoose.Schema(
       headingFont: str(),
       bodyFont: str(),
       radius: str(),
+      // The shop's own button words (empty: the template's, e.g. "Add to order")
+      addLabel: str(),
+      buyLabel: str(),
     },
 
     // Opening hours (Admin → Settings). Off by default, so the shop is always open.

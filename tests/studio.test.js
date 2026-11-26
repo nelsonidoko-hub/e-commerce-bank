@@ -481,6 +481,162 @@ await check('reset to original: only the founder, and everything goes back', asy
   assert.match((await Product.findOne({ store: demo._id, name: 'Chilled Zobo' })).image, /^data:image\/svg/)
 })
 
+// ---------- homepage content and button words ----------
+const settingsOf = async (shop) => Settings.findOne({ store: shop._id })
+await check('a new shop starts with its template\'s own homepage and banner words (food: "Order now")', async () => {
+  const s = await signup('chef', 'Mama Put', 'fresh')
+  const set = await settingsOf(s.shop)
+  const ids = set.homeSections.map((x) => x.id)
+  assert.deepEqual(ids.slice(0, 3), ['hero', 's-menu', 's-how'])
+  assert.equal(set.homeSections[1].data.title, "Today's menu")
+  assert.equal(set.homeSections[1].data.category, 'meals')
+  const slide = await HeroSlide.findOne({ store: s.shop._id })
+  assert.equal(slide.heading, 'Hot meals from Mama Put')
+  assert.equal(slide.buttonLabel, 'Order now')
+  const classic = await settingsOf((await signup('tee', 'Tee Shop', 'classic')).shop)
+  const banner = classic.homeSections.find((x) => x.type === 'banner')
+  assert.match(banner.data.image, /^data:image\/svg/, 'an empty picture is filled in')
+  assert.notDeepEqual(classic.homeSections.map((x) => x.id), ids, 'templates start differently')
+})
+await check('Studio content: checked, saved, and used by new shops with the shop name filled in', async () => {
+  const content = {
+    hero: { heading: 'Fresh coffee at {shop}', text: 'Brewed to order', buttonLabel: 'Order now', buttonLink: '/category/drinks' },
+    homeSections: [
+      { id: 'hero', type: 'hero', enabled: true, data: {} },
+      { id: 'menu-row', type: 'products', enabled: true, data: { title: 'Our menu', source: 'category', category: 'drinks', count: 6, layout: 'carousel' } },
+      { id: 'about-us', type: 'text', enabled: true, data: { heading: 'About {shop}', text: 'Since 2019.', align: 'left' } },
+      { id: 'promo-one', type: 'banner', enabled: true, data: { heading: 'Happy hour', text: '', buttonLabel: 'See deals', buttonLink: '/shop', image: '' } },
+      { id: 'gone-cat', type: 'products', enabled: true, data: { title: 'Pastries', source: 'category', category: 'pastries', count: 4 } },
+    ],
+  }
+  const bad = async (c) => (await studio(SC.createStudio, founderTok, { body: { ...luxe, key: 'cafe-bad', content: c } })).statusCode
+  assert.equal(await bad({ homeSections: [{ type: 'popup', data: {} }] }), 400)
+  assert.equal(await bad({ homeSections: [{ type: 'banner', data: { buttonLink: 'javascript:alert(1)' } }] }), 400)
+  assert.equal(await bad({ homeSections: [{ type: 'text', data: { heading: 'x'.repeat(200) } }] }), 400)
+  assert.equal(await bad('nope'), 400)
+  const r = await studio(SC.createStudio, founderTok, { body: { ...luxe, key: 'cafe', label: 'Cafe', recipe: { ...recipe, words: { add: 'Add to order', buy: 'Order now' } }, content } })
+  assert.equal(r.statusCode, 201, JSON.stringify(r.body))
+  assert.equal(r.body.content.homeSections.length, 5)
+  assert.equal(r.body.content.hero.heading, 'Fresh coffee at {shop}')
+  assert.deepEqual(r.body.recipe.words, { add: 'Add to order', buy: 'Order now' })
+  assert.equal(r.body.previewSlug, 'demo-fresh', 'previewed in the demo with the same sample products')
+  await studio(SC.setStudioStatus, founderTok, { params: { id: r.body._id }, body: { status: 'published' } })
+  const s = await signup('barista', 'Bean Bar', 'cafe')
+  const set = await settingsOf(s.shop)
+  assert.deepEqual(set.homeSections.map((x) => x.id), ['hero', 'menu-row', 'about-us', 'promo-one', 'gone-cat'])
+  assert.equal(set.homeSections[2].data.heading, 'About Bean Bar')
+  assert.match(set.homeSections[3].data.image, /^data:image\/svg/)
+  assert.equal(set.homeSections[4].data.source, 'newest', 'a category the shop lacks shows the newest products')
+  const slide = await HeroSlide.findOne({ store: s.shop._id })
+  assert.deepEqual([slide.heading, slide.buttonLabel, slide.buttonLink], ['Fresh coffee at Bean Bar', 'Order now', '/category/drinks'])
+  const theme = (await run([S.getSettings], { host: `${s.shop.slug}.shopsy.ng`, token: s.account.token })).body.theme
+  assert.deepEqual(theme.recipe.words, { add: 'Add to order', buy: 'Order now' })
+})
+await check('button words: 24 characters, plain text; a shop can set its own', async () => {
+  const bad = async (w) => (await studio(SC.createStudio, founderTok, { body: { ...luxe, key: 'words-bad', recipe: { ...recipe, words: w } } })).statusCode
+  assert.equal(await bad({ add: 'x'.repeat(25) }), 400)
+  assert.equal(await bad({ buy: '<b>Buy</b>' }), 400)
+  const s = await signup('wordy', 'Wordy Shop', 'classic')
+  const host = `${s.shop.slug}.shopsy.ng`
+  const save = (theme) => run([protect, admin, S.saveDraft], { host, token: s.account.token, body: { theme } })
+  assert.equal((await save({ addLabel: 'Add to basket', buyLabel: 'Grab it' })).statusCode, 200)
+  assert.equal((await save({ addLabel: 'y'.repeat(30) })).statusCode, 400)
+  assert.equal((await save({ buyLabel: '<script>' })).statusCode, 400)
+  await run([protect, admin, S.publishDraft], { host, token: s.account.token })
+  const theme = (await run([S.getSettings], { host, token: s.account.token })).body.theme
+  assert.deepEqual([theme.addLabel, theme.buyLabel], ['Add to basket', 'Grab it'])
+})
+await check('the Studio gets every built-in homepage, the sample categories, and the demo shops for previews', async () => {
+  const o = (await studio(SC.studioOptions, founderTok)).body
+  assert.equal(o.builtInContent.fresh.hero.buttonLabel, 'Order now')
+  assert.deepEqual(o.sampleCategories.fresh.map((c) => c.name), ['meals', 'drinks', 'small-chops'])
+  assert.ok(o.demoSlugs.includes('demo-classic') && o.demoSlugs.includes('demo-tech'))
+})
+await check('a template with its own products gets a preview shop while being made; deleting removes it', async () => {
+  const own = { ...luxe, key: 'own-draft', label: 'Own draft', sampleSet: 'custom', samples: { categories: [{ label: 'Cakes' }], products: [{ name: 'Red Velvet', price: 9000, category: 'Cakes' }] } }
+  const r = await studio(SC.createStudio, founderTok, { body: own })
+  assert.equal(r.statusCode, 201, JSON.stringify(r.body))
+  await studio(SC.updateStudio, founderTok, { params: { id: r.body._id }, body: own })
+  const demo = await Store.findOne({ slug: 'demo-own-draft' })
+  assert.ok(demo?.isDemo, 'preview shop made')
+  assert.deepEqual((await Product.find({ store: demo._id })).map((p) => p.name), ['Red Velvet'])
+  assert.equal((await studio(SC.getStudio, founderTok, { params: { id: r.body._id } })).body.previewSlug, 'demo-own-draft')
+  assert.ok(!(await run([PL.getDemos], {}, false)).body.some?.((d) => d.template === 'own-draft'), 'not in the public demos')
+  assert.equal((await studio(SC.deleteStudio, founderTok, { params: { id: r.body._id } })).statusCode, 200)
+  assert.equal(await Store.findOne({ slug: 'demo-own-draft' }), null)
+})
+
+// ---------- keeping the template's products and pictures ----------
+const ST = await imp('controllers/storeController.js')
+const P = await imp('controllers/productController.js')
+const { unmarkSample, samplePicture } = await imp('utils/sampleData.js')
+await check('a drawn sample picture can lose its SAMPLE mark; other pictures are untouched', async () => {
+  const pic = samplePicture('Silk Dress', '#111111', '#222222')
+  assert.ok(decodeURIComponent(pic).includes('>SAMPLE</text>'))
+  const clean = unmarkSample(pic)
+  assert.ok(!decodeURIComponent(clean).includes('SAMPLE'))
+  assert.ok(decodeURIComponent(clean).includes('Silk Dress'), 'the rest of the picture stays')
+  assert.ok(decodeURIComponent(clean).endsWith('</svg>'))
+  for (const v of ['https://res.cloudinary.com/x/a.jpg', '', null, 'data:image/png;base64,AAAA']) assert.equal(unmarkSample(v), v)
+})
+await check('publishing does not force removing the samples: "Keep" makes them the shop\'s own', async () => {
+  const s = await signup('keeper', 'Keeper Shop', 'classic')
+  const host = `${s.shop.slug}.shopsy.ng`
+  const as = { host, token: s.account.token }
+  const before = (await run([protect, admin, ST.getSetup], as)).body
+  const step = before.steps.find((x) => x.id === 'samples')
+  assert.equal(step.label, 'Keep or remove the sample products')
+  assert.equal(step.done, false)
+  const count = await Product.countDocuments({ store: s.shop._id })
+  const r = await run([protect, admin, ST.keepSamples], as)
+  assert.equal(r.statusCode, 200, JSON.stringify(r.body))
+  assert.equal(r.body.kept.products, count)
+  assert.equal(r.body.setup.steps.find((x) => x.id === 'samples').done, true)
+  assert.equal(await Product.countDocuments({ store: s.shop._id }), count, 'nothing deleted')
+  assert.equal(await Product.countDocuments({ store: s.shop._id, isSample: true }), 0)
+  assert.equal(await Category.countDocuments({ store: s.shop._id, isSample: true }), 0)
+  for (const p of await Product.find({ store: s.shop._id })) assert.ok(!decodeURIComponent(p.image).includes('>SAMPLE<'), p.name)
+  const set = await Settings.findOne({ store: s.shop._id })
+  const pictured = set.homeSections.filter((x) => x.data?.image)
+  assert.ok(pictured.length >= 2, 'the banner and featured sections have pictures')
+  for (const x of pictured) assert.ok(!decodeURIComponent(x.data.image).includes('>SAMPLE<'), x.id)
+  const other = await signup('keeper2', 'Other Shop', 'fresh')
+  assert.ok((await Product.countDocuments({ store: other.shop._id, isSample: true })) > 0, "another shop's samples are untouched")
+})
+await check('editing a sample product makes it the merchant\'s own', async () => {
+  const s = await signup('editor', 'Edit Shop', 'classic')
+  const p = await Product.findOne({ store: s.shop._id, isSample: true })
+  const r = await run([protect, admin, P.updateProduct], { host: `${s.shop.slug}.shopsy.ng`, token: s.account.token, params: { id: String(p._id) }, body: { price: 9999 } })
+  assert.equal(r.statusCode, 200, JSON.stringify(r.body))
+  const after = await Product.findOne({ _id: p._id, store: s.shop._id })
+  assert.equal(after.isSample, false)
+  assert.equal(after.price, 9999)
+  assert.ok(!decodeURIComponent(after.image).includes('>SAMPLE<'))
+  assert.ok((await Product.countDocuments({ store: s.shop._id, isSample: true })) > 0, 'the others stay samples')
+})
+await check("the builder can load another template's homepage, made ready for this shop", async () => {
+  const s = await signup('switcher', 'Switch Shop', 'classic')
+  const as = { host: `${s.shop.slug}.shopsy.ng`, token: s.account.token }
+  const r = await run([protect, admin, S.getTemplateHomepage], { ...as, params: { template: 'fresh' } })
+  assert.equal(r.statusCode, 200, JSON.stringify(r.body))
+  assert.equal(r.body.hero.heading, 'Hot meals from Switch Shop')
+  const menu = r.body.homeSections.find((x) => x.id === 's-menu')
+  assert.equal(menu.data.source, 'newest', 'this shop has no "meals" category')
+  assert.equal((await Settings.findOne({ store: s.shop._id })).homeSections.some((x) => x.id === 's-menu'), false, 'nothing saved')
+  assert.equal((await run([protect, admin, S.getTemplateHomepage], { ...as, params: { template: 'nope' } })).statusCode, 404)
+  const priv = await studio(SC.createStudio, founderTok, { body: { ...luxe, key: 'vip-only', label: 'VIP', visibility: 'private', allowedEmails: 'someone@else.ng' } })
+  await studio(SC.setStudioStatus, founderTok, { params: { id: priv.body._id }, body: { status: 'published' } })
+  assert.equal((await run([protect, admin, S.getTemplateHomepage], { ...as, params: { template: 'vip-only' } })).statusCode, 404, 'a private template stays private')
+})
+await check('a Studio template can bring up to 60 products and 20 categories', async () => {
+  const cats = Array.from({ length: 25 }, (_, i) => ({ label: `Cat ${i + 1}` }))
+  const prods = Array.from({ length: 70 }, (_, i) => ({ name: `Thing ${i + 1}`, price: 1000 + i, category: `Cat ${(i % 20) + 1}` }))
+  const r = await studio(SC.createStudio, founderTok, { body: { ...luxe, key: 'big-range', label: 'Big range', sampleSet: 'custom', samples: { categories: cats, products: prods } } })
+  assert.equal(r.statusCode, 201, JSON.stringify(r.body).slice(0, 300))
+  assert.equal(r.body.samples.categories.length, 20)
+  assert.equal(r.body.samples.products.length, 60)
+})
+
 console.log(`${FAKE ? '[in-memory] ' : '[MongoDB] '}${passed} passed, ${failures.length} failed`)
 for (const f of failures) console.log('  FAIL', f)
 if (!FAKE) {

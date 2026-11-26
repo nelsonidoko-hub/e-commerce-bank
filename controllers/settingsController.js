@@ -3,7 +3,10 @@ import { cleanSections, liveSections, SectionError } from '../utils/sections.js'
 import { canManageStore } from '../utils/storeAccess.js'
 import Settings from '../models/Settings.js'
 import { resolvePaystack } from '../utils/paystackConfig.js'
-import { BUILTIN_TEMPLATES, freshTemplates, isSelectableTemplate, recipeFor, sampleSetFor, studioStatus, picturesFor, samplesFor, canUseTemplate } from '../utils/templates.js'
+import { BUILTIN_TEMPLATES, freshTemplates, isSelectableTemplate, recipeFor, sampleSetFor, studioStatus, picturesFor, samplesFor, canUseTemplate, contentFor } from '../utils/templates.js'
+import { contentForShop } from '../utils/templateContent.js'
+import { sampleContent } from '../utils/sampleData.js'
+import Category from '../models/Category.js'
 
 // A template a shop may wear: built-in, published in the Studio, or a Studio
 // template that was later hidden (shops already using it keep it). Drafts and
@@ -86,6 +89,14 @@ export function cleanTheme(input) {
   pick('headingFont', HEADING_FONTS, 'heading font')
   pick('bodyFont', BODY_FONTS, 'text font')
   pick('radius', RADII, 'corner style')
+
+  for (const field of ['addLabel', 'buyLabel']) {
+    if (input[field] === undefined) continue
+    const v = String(input[field] ?? '').replace(/\s+/g, ' ').trim()
+    if (v.length > 24) throw new Error('Button words: 24 characters at most')
+    if (/[<>]/.test(v)) throw new Error('Button words: plain text only')
+    out[field] = v
+  }
 
   if (input.brandColor !== undefined) {
     const c = String(input.brandColor).trim().toLowerCase()
@@ -363,6 +374,26 @@ export const discardDraft = async (req, res) => {
     res.json(designOf(settings))
   } catch (error) {
     console.error('discardDraft error:', error)
+    res.status(500).json({ message: 'Something went wrong' })
+  }
+}
+
+// GET /api/settings/template-homepage/:template  (admin)
+// A template's own homepage made ready for this shop: its name in the words,
+// pictures filled in, and rows for categories the shop doesn't have showing
+// its newest products. The builder puts it in the draft; nothing is saved here.
+export const getTemplateHomepage = async (req, res) => {
+  try {
+    await freshTemplates()
+    const id = String(req.params.template || '')
+    if (!isSelectableTemplate(id) || !canUseTemplate(id, req.user?.email)) return res.status(404).json({ message: 'Template not found' })
+    const settings = await getStoreSettings(req.store)
+    const name = settings.storeName || req.store.name || 'Your shop'
+    const categories = (await Category.find({ store: req.store._id }).select('name').lean()).map((c) => c.name)
+    const pictures = sampleContent(sampleSetFor(id), name, picturesFor(id), samplesFor(id)).picture
+    res.json(contentForShop(contentFor(id), name, pictures, categories))
+  } catch (error) {
+    console.error('getTemplateHomepage error:', error)
     res.status(500).json({ message: 'Something went wrong' })
   }
 }

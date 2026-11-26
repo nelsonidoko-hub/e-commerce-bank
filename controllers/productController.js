@@ -1,3 +1,4 @@
+import { unmarkSample } from '../utils/sampleData.js'
 import Product from '../models/Product.js'
 import Category from '../models/Category.js'
 import { escapeRegex } from '../utils/validate.js'
@@ -103,6 +104,13 @@ export const updateProduct = async (req, res) => {
     }
 
     Object.assign(product, cleanBody(req.body))
+    // A sample the merchant has edited and saved is theirs now
+    if (product.isSample) {
+      product.isSample = false
+      product.image = unmarkSample(product.image)
+      if (product.hoverImage) product.hoverImage = unmarkSample(product.hoverImage)
+      if (Array.isArray(product.images)) product.images = product.images.map(unmarkSample)
+    }
     const updatedProduct = await product.save()
 
     res.json(updatedProduct)

@@ -1,5 +1,5 @@
 import express from 'express'
-import { getSettings, updateSettings, getDraft, saveDraft, publishDraft, discardDraft } from '../controllers/settingsController.js'
+import { getSettings, updateSettings, getDraft, saveDraft, publishDraft, discardDraft, getTemplateHomepage } from '../controllers/settingsController.js'
 import { protect, admin, optionalLogin } from '../middleware/authMiddleware.js'
 
 const router = express.Router()
@@ -13,6 +13,7 @@ router.put('/', protect, admin, updateSettings)
 
 // The builder's unpublished draft
 router.get('/draft', protect, admin, getDraft)
+router.get('/template-homepage/:template', protect, admin, getTemplateHomepage)
 router.put('/draft', protect, admin, saveDraft)
 router.post('/draft/publish', protect, admin, publishDraft)
 router.delete('/draft', protect, admin, discardDraft)

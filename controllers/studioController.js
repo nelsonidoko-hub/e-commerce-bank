@@ -2,7 +2,13 @@ import StudioTemplate from '../models/StudioTemplate.js'
 import Settings from '../models/Settings.js'
 import Store from '../models/Store.js'
 import { cleanKey, cleanRecipe, cleanPictures, cleanSamples, cleanEmails, refreshTemplates, TemplateError, SAMPLE_SETS, PARTS, BUILTIN_TEMPLATES } from '../utils/templates.js'
-import { SAMPLE_PRODUCT_NAMES } from '../utils/sampleData.js'
+import { SAMPLE_PRODUCT_NAMES, SAMPLE_CATEGORIES } from '../utils/sampleData.js'
+import { BUILTIN_CONTENT, cleanContent } from '../utils/templateContent.js'
+import { SectionError } from '../utils/sections.js'
+import Product from '../models/Product.js'
+import Category from '../models/Category.js'
+import HeroSlide from '../models/HeroSlide.js'
+import Page from '../models/Page.js'
 import cloudinary from '../config/cloudinary.js'
 import { remakeDemo } from '../scripts/seedDemos.js'
 import { storeUrl } from '../utils/storeUrl.js'
@@ -20,7 +26,7 @@ export const studioAccess = (req, res, next) => {
 }
 
 function serverError(res, error, where) {
-  if (error instanceof TemplateError) return res.status(400).json({ message: error.message })
+  if (error instanceof TemplateError || error instanceof SectionError) return res.status(400).json({ message: error.message })
   if (error?.code === 11000) return res.status(400).json({ message: 'That short name is taken' })
   console.error(`${where}:`, error)
   res.status(500).json({ message: 'Something went wrong. Please try again.' })
@@ -38,9 +44,28 @@ async function shopsUsing(key) {
   return Store.countDocuments({ _id: { $in: settings.map((s) => s.store) }, isDemo: { $ne: true } })
 }
 
+// The homepage a template starts shops with (its own, or the built-in's)
+const contentOf = (t) => t.content || BUILTIN_CONTENT[t.builtIn] || BUILTIN_CONTENT[t.sampleSet] || BUILTIN_CONTENT.classic
+
+// The shop the Studio's live preview runs in: the template's own demo when it
+// has one, else the demo with the same sample products
+async function previewSlug(t) {
+  const candidates = [`demo-${templateId(t)}`, `demo-${t.sampleSet}`, 'demo-classic']
+  const found = await Store.find({ slug: { $in: candidates } }).select('slug').lean()
+  const slugs = new Set(found.map((s) => s.slug))
+  return candidates.find((c) => slugs.has(c)) || null
+}
+
+async function previewOf(t) {
+  const slug = await previewSlug(t)
+  return { previewSlug: slug, previewUrl: slug ? storeUrl({ slug }) : null }
+}
+
 async function view(t) {
   const demo = t.status === 'published' ? await Store.findOne({ slug: `demo-${templateId(t)}` }).select('slug customDomain customDomainVerified').lean() : null
   return {
+    content: contentOf(t),
+    ...(await previewOf(t)),
     _id: t._id,
     key: t.key,
     label: t.label,
@@ -63,8 +88,20 @@ async function view(t) {
 }
 
 // GET /api/studio/options -> the parts to choose from
-export const studioOptions = (req, res) => {
-  res.json({ parts: PARTS, sampleSets: SAMPLE_SETS, sampleProducts: SAMPLE_PRODUCT_NAMES, builtIn: BUILTIN_TEMPLATES, canPublish: isFounder(req.user) })
+export const studioOptions = async (req, res) => {
+  // Demo shops for each sample set, for the preview of a template not saved yet
+  const demos = await Store.find({ slug: { $in: Object.keys(SAMPLE_SETS).map((k) => `demo-${k}`) } }).select('slug').lean().catch(() => [])
+  res.json({
+    parts: PARTS,
+    sampleSets: SAMPLE_SETS,
+    sampleProducts: SAMPLE_PRODUCT_NAMES,
+    sampleCategories: SAMPLE_CATEGORIES,
+    builtIn: BUILTIN_TEMPLATES,
+    builtInContent: BUILTIN_CONTENT,
+    demoSlugs: demos.map((d) => d.slug),
+    demoUrls: Object.fromEntries(demos.map((d) => [d.slug, storeUrl({ slug: d.slug })])),
+    canPublish: isFounder(req.user),
+  })
 }
 
 // GET /api/studio
@@ -100,6 +137,8 @@ function details(body) {
     recipe: cleanRecipe(body.recipe),
     pictures: cleanPictures(body.pictures, sampleSet),
     samples: sampleSet === 'custom' ? cleanSamples(body.samples) : null,
+    // Not sent (an older Studio page): keep what the template had
+    ...(body.content !== undefined ? { content: cleanContent(body.content) } : {}),
     // Edited built-ins are always public (they replace a gallery template)
     visibility: body.visibility === 'private' && !body.builtIn ? 'private' : 'public',
     allowedEmails: body.visibility === 'private' && !body.builtIn ? cleanEmails(body.allowedEmails) : [],
@@ -144,10 +183,15 @@ export const updateStudio = async (req, res) => {
     t.markModified('recipe')
     t.markModified('pictures')
     t.markModified('samples')
+    t.markModified('content')
     await t.save()
     await refreshTemplates()
-    // Live in the gallery: rebuild its demo shop so it shows the change now
-    if (t.status === 'published' && t.visibility !== 'private') await remakeDemo(req.user, templateId(t), `${t.label} demo`)
+    // Live in the gallery: rebuild its demo shop so it shows the change now.
+    // A template with its own products gets a preview shop while it's made,
+    // so the Studio's live preview shows them (not for private ones).
+    if (t.visibility !== 'private' && (t.status === 'published' || (!t.builtIn && t.sampleSet === 'custom'))) {
+      await remakeDemo(req.user, templateId(t), `${t.label} demo`)
+    }
     res.json(await view(t.toObject()))
   } catch (error) {
     serverError(res, error, 'updateStudio')
@@ -205,6 +249,12 @@ export const deleteStudio = async (req, res) => {
     if ((await shopsUsing(t.key)) > 0) return res.status(400).json({ message: 'Shops are using this template, so it stays. You can keep it hidden.' })
     await StudioTemplate.deleteOne({ _id: t._id })
     await refreshTemplates()
+    // its preview shop goes too
+    const demo = await Store.findOne({ slug: `demo-${t.key}`, isDemo: true })
+    if (demo) {
+      for (const model of [Product, Category, HeroSlide, Settings, Page]) await model.deleteMany({ store: demo._id })
+      await Store.deleteOne({ _id: demo._id })
+    }
     res.json({ message: 'Deleted' })
   } catch (error) {
     serverError(res, error, 'deleteStudio')

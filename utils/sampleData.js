@@ -59,7 +59,8 @@ export const pictureIcon = (label) => PICTURE_ICONS.find(([re]) => re.test(Strin
 
 // A picture: soft gradient in the given colours, a drawing of the product,
 // and its name underneath
-export function samplePicture(label, from = '#e5e7eb', to = '#9ca3af', { width = 600, height = 800 } = {}) {
+// iconFor: draw the picture for that product name instead (a banner without words)
+export function samplePicture(label, from = '#e5e7eb', to = '#9ca3af', { width = 600, height = 800, iconFor = '' } = {}) {
   const words = String(label).split(' ')
   const lines = []
   for (const w of words) {
@@ -75,7 +76,7 @@ export function samplePicture(label, from = '#e5e7eb', to = '#9ca3af', { width =
     .slice(0, 2)
     .map((l, i) => `<text x="50%" y="${startY + i * size * 1.2}" text-anchor="middle" dominant-baseline="middle" font-family="Arial, sans-serif" font-size="${size}" font-weight="700" fill="#ffffff" fill-opacity="0.92">${esc(l)}</text>`)
     .join('')
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient></defs><rect width="100%" height="100%" fill="url(#g)"/><circle cx="50%" cy="${iconY}" r="${icon * 0.62}" fill="#ffffff" fill-opacity="0.22"/><text x="50%" y="${iconY}" text-anchor="middle" dominant-baseline="central" font-size="${icon}">${pictureIcon(label)}</text>${text}<text x="50%" y="${height - size * 0.8}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${Math.round(size * 0.45)}" fill="#ffffff" fill-opacity="0.75">SAMPLE</text></svg>`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient></defs><rect width="100%" height="100%" fill="url(#g)"/><circle cx="50%" cy="${iconY}" r="${icon * 0.62}" fill="#ffffff" fill-opacity="0.22"/><text x="50%" y="${iconY}" text-anchor="middle" dominant-baseline="central" font-size="${icon}">${pictureIcon(iconFor || label)}</text>${text}<text x="50%" y="${height - size * 0.8}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${Math.round(size * 0.45)}" fill="#ffffff" fill-opacity="0.75">SAMPLE</text></svg>`
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
 }
 
@@ -201,6 +202,8 @@ SETS.atelier = SETS.minimal
 
 export const SAMPLE_TEMPLATES = Object.keys(SETS)
 // The sample product names in each set (the Template Studio gives each a photo slot)
+// Each set's categories as { name, label } (the Studio's homepage editor offers them)
+export const SAMPLE_CATEGORIES = Object.fromEntries(Object.entries(SETS).map(([id, set]) => [id, set.categories.map(([name, label]) => ({ name, label }))]))
 export const SAMPLE_PRODUCT_NAMES = Object.fromEntries(Object.entries(SETS).map(([id, set]) => [id, set.products.map(([name]) => name)]))
 
 // Everything needed to fill a new shop: categories, products, a banner slide
@@ -221,6 +224,16 @@ function customSet(custom) {
 // pictures: real photos from the Template Studio (optional), used instead of
 // the drawn pictures wherever one is given. custom: the template's own
 // products when template is 'custom'.
+// A drawn sample picture without its "SAMPLE" mark, for a merchant who keeps
+// the template's products as their own. Anything else comes back unchanged.
+const MARK = encodeURIComponent('fill-opacity="0.75">SAMPLE</text>')
+export function unmarkSample(url) {
+  if (typeof url !== 'string' || !url.startsWith('data:image/svg+xml') || !url.includes(MARK)) return url
+  const at = url.indexOf(MARK)
+  const start = url.lastIndexOf(encodeURIComponent('<text'), at)
+  return start === -1 ? url : url.slice(0, start) + url.slice(at + MARK.length)
+}
+
 export function sampleContent(template, shopName, pictures = null, custom = null) {
   const photo = pictures && typeof pictures === 'object' ? pictures : {}
   const set = template === 'custom' && custom?.products?.length ? customSet(custom) : SETS[template] || SETS.classic
@@ -243,7 +256,9 @@ export function sampleContent(template, shopName, pictures = null, custom = null
     isSample: true,
   }))
 
-  const banner = samplePicture(shopName, to, from, { width: 1600, height: 900 })
+  // Banner pictures show one of the shop's own products, not a generic bag
+  const star = (i) => set.products[i % set.products.length]?.[0] || shopName
+  const banner = samplePicture('', to, from, { width: 1600, height: 900, iconFor: star(0) })
   const slide = {
     mediaType: 'image',
     mediaUrl: photo.hero || banner,
@@ -258,11 +273,18 @@ export function sampleContent(template, shopName, pictures = null, custom = null
 
   const settings = {
     homeCategoryRow: { enabled: true, title: 'Popular picks', category: set.row },
-    homeBanner: { image: photo.banner || samplePicture('New arrivals', from, to, { width: 1600, height: 700 }) },
-    homeFeatured: { image: photo.featured || samplePicture(shopName, to, from, { width: 900, height: 1100 }), title: 'Featured collection' },
+    homeBanner: { image: photo.banner || samplePicture('', from, to, { width: 1600, height: 700, iconFor: star(1) }) },
+    homeFeatured: { image: photo.featured || samplePicture('', to, from, { width: 900, height: 1100, iconFor: star(0) }), title: 'Featured collection' },
     // food shops usually sell for pickup and delivery the same day
     ...(template === 'fresh' ? { pickup: { readyTime: 'Usually ready in 30 to 60 minutes' } } : {}),
   }
 
-  return { categories, products, slide, settings }
+  // Pictures for the homepage sections that were left without one
+  const picture = (slot, i = 0) => {
+    if (slot === 'banner') return photo.banner || samplePicture('', from, to, { width: 1600, height: 700, iconFor: star(1 + i) })
+    if (slot === 'featured') return photo.featured || samplePicture('', to, from, { width: 900, height: 1100, iconFor: star(i) })
+    return photo.featured || samplePicture('', from, to, { width: 1200, height: 900, iconFor: star(2 + i) })
+  }
+
+  return { categories, products, slide, settings, picture }
 }

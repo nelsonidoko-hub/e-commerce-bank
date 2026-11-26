@@ -10,6 +10,7 @@ import { forgetStore } from '../middleware/storeMiddleware.js'
 import { inStore } from '../utils/tenant.js'
 import { canManageStore } from '../utils/storeAccess.js'
 import { storeUrl, webhookUrl } from '../utils/storeUrl.js'
+import { unmarkSample } from '../utils/sampleData.js'
 
 // GET /api/store/status
 // Everyone: the shop's name and whether it is open.
@@ -74,7 +75,7 @@ async function setupStatus(req) {
   const steps = [
     { id: 'logo', label: 'Add your logo', done: Boolean(logo), link: '/admin/logo' },
     { id: 'products', label: 'Add your first product', done: ownProducts > 0, link: '/admin/products/new', required: true },
-    { id: 'samples', label: 'Remove the sample products', done: sampleProducts === 0, required: true },
+    { id: 'samples', label: 'Keep or remove the sample products', done: sampleProducts === 0, required: true },
     { id: 'contact', label: 'Add your phone number and delivery fee', done: Boolean(settings.contactPhone || settings.whatsappNumber), link: '/admin/settings' },
     // Any way for customers to pay: Paystack, or bank transfer / pay on
     // delivery (for vendors still waiting for Paystack activation)
@@ -139,6 +140,51 @@ export const publishStore = async (req, res) => {
     res.json({ published: true, trialEndsAt: store.trialEndsAt })
   } catch (error) {
     console.error('publishStore error:', error)
+    res.status(500).json({ message: 'Something went wrong' })
+  }
+}
+
+// POST /api/store/samples/keep  (admin)
+// The merchant keeps the template's products, categories, banner and pictures
+// as their own (they really sell them, or will edit them later). They stop
+// being samples: the "SAMPLE" mark leaves the drawn pictures, and they count
+// as real products for publishing and the Market Square.
+export const keepSamples = async (req, res) => {
+  try {
+    const products = await Product.find(inStore(req, { isSample: true }))
+    for (const p of products) {
+      p.isSample = false
+      p.image = unmarkSample(p.image)
+      if (p.hoverImage) p.hoverImage = unmarkSample(p.hoverImage)
+      if (Array.isArray(p.images)) p.images = p.images.map(unmarkSample)
+      await p.save()
+    }
+    await Category.updateMany(inStore(req, { isSample: true }), { $set: { isSample: false } })
+    const slides = await HeroSlide.find(inStore(req, { isSample: true }))
+    for (const slide of slides) {
+      slide.isSample = false
+      slide.mediaUrl = unmarkSample(slide.mediaUrl)
+      await slide.save()
+    }
+
+    const settings = await getStoreSettings(req.store)
+    for (const section of ['homeBanner', 'homeFeatured']) {
+      if (settings[section]?.image) settings[section].image = unmarkSample(settings[section].image)
+    }
+    const unmarkSections = (list) => (Array.isArray(list) ? list.map((x) => (x?.data?.image ? { ...x, data: { ...x.data, image: unmarkSample(x.data.image) } } : x)) : list)
+    if (Array.isArray(settings.homeSections)) {
+      settings.homeSections = unmarkSections(settings.homeSections)
+      settings.markModified('homeSections')
+    }
+    if (settings.draft?.homeSections) {
+      settings.draft = { ...settings.draft, homeSections: unmarkSections(settings.draft.homeSections) }
+      settings.markModified('draft')
+    }
+    await settings.save()
+
+    res.json({ kept: { products: products.length }, setup: await setupStatus(req) })
+  } catch (error) {
+    console.error('keepSamples error:', error)
     res.status(500).json({ message: 'Something went wrong' })
   }
 }

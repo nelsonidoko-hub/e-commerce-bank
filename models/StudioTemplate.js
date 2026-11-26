@@ -23,6 +23,10 @@ const studioTemplateSchema = new mongoose.Schema(
     // When sampleSet is 'custom': the template's own starter content
     // { heading, text, categories: [{ name, label }], products: [{ name, price, category, description, image }] }
     samples: { type: mongoose.Schema.Types.Mixed, default: null },
+    // The homepage a new shop (and the demo) starts with, and the banner's
+    // words: { hero, homeSections } (utils/templateContent.js). Empty: the
+    // built-in's homepage for its sample set.
+    content: { type: mongoose.Schema.Types.Mixed, default: null },
     // public: in the gallery for everyone. private: made for particular
     // clients - only these platform accounts (emails) can use it, it never
     // shows in the gallery and has no public demo shop.

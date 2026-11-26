@@ -155,6 +155,38 @@ No backend change is needed. Part ids are short names (letters, numbers, dashes)
 
 Every shop made this way is logged in the Founder actions.
 
+## 2g. The editor works like the builder: live shop preview, homepage and words
+
+The Studio editor now has four tabs on the left and the **real shop** on the right (laptop or phone view):
+
+| Tab | What you set |
+|---|---|
+| **Details** | Name, who can use it, sample products, photos |
+| **Look** | Colours, fonts, corners |
+| **Layout** | Menu bar, banner, homepage layout, product cards, product page, shop pages, spacing, footer |
+| **Homepage & words** | The banner's words (heading, small text, button text and where it goes), the **button words** ("Add to order", "Order now"), and the **homepage sections**, which you add, reorder, hide and edit exactly like the merchant's builder |
+
+The preview is a demo shop with the same sample products, so every change shows instantly. Type `{shop}` in any text and each shop sees its own name there ("Hot meals from {shop}" becomes "Hot meals from Mama Put").
+
+What happens with it:
+- **New shops** start with the template's homepage, banner words and button words, so a food shop says "Order now" from day one.
+- **Merchants can change everything** in their own builder. The button words are under Builder → Design → Button words.
+- **The built-in templates each have their own homepage now.** For example, Fresh has Today's menu, How to order, Small chops, Drinks, reviews and Order on WhatsApp; Tech has Phones, a trade-in banner, Audio, Accessories and Why buy from us.
+- Pictures left empty in a section get a sample picture of one of the template's own products.
+- A section for a category the shop doesn't have shows the newest products instead of an empty row.
+- A template with **My own products** gets its own preview shop when you press Save, so the preview shows your products.
+
+**After deploying, run `npm run seed-demos` once** so every demo shop is rebuilt with its template's new homepage. Shops that already exist keep the homepage they have.
+
+## 2h. Merchants can keep your products and pictures
+
+- **Removing the samples is no longer forced.** The setup step is now "Keep or remove the sample products" and has two buttons:
+  - **Keep them:** the template's products, categories, banner and section pictures become the shop's own. The "SAMPLE" mark disappears from drawn pictures, and the products count as real ones for publishing and the Market Square. The merchant should check prices and stock afterwards.
+  - **Remove:** works as before.
+- **Editing and saving a sample product** also makes it the merchant's own.
+- **Your template can bring up to 60 products and 20 categories** under "My own products" (it was 12 and 8). Add a photo for each one in the Photos section.
+- **Builder → Design** now has **"Use this template's homepage"**. A merchant who switches template can also take its homepage. It goes into their draft first, and nothing changes for customers until they publish.
+
 ## 3. Ideas: new templates from existing parts
 
 | Template | Start from | Change |
@@ -204,6 +236,6 @@ Some looks can't be made from the current parts, such as a split-screen banner, 
 
 ## Tests
 ```
-npm run test:studio   # 32 checks
+npm run test:studio   # 42 checks
 npm test              # all 8 suites
 ```

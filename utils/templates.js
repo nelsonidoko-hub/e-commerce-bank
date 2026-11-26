@@ -1,3 +1,4 @@
+import { BUILTIN_CONTENT } from './templateContent.js'
 import StudioTemplate from '../models/StudioTemplate.js'
 import { SAMPLE_PRODUCT_NAMES } from './sampleData.js'
 
@@ -97,7 +98,20 @@ export function cleanRecipe(input) {
       // structure (an edited built-in) or the standard one
       ...structure(l, one),
     },
+    ...buttonWords(r.words),
   }
+}
+// The template's button words ("Add to order", "Order now"); left out = the standard ones
+function buttonWords(input) {
+  if (!input || typeof input !== 'object') return {}
+  const out = {}
+  for (const key of ['add', 'buy']) {
+    const v = typeof input[key] === 'string' ? input[key].replace(/\s+/g, ' ').trim() : ''
+    if (v.length > 24) throw new TemplateError('Button words: 24 characters at most')
+    if (/[<>]/.test(v)) throw new TemplateError('Button words: plain text only')
+    if (v) out[key] = v
+  }
+  return Object.keys(out).length ? { words: out } : {}
 }
 function structure(l, one) {
   const out = {}
@@ -138,19 +152,23 @@ export function cleanPictures(input, sampleSet) {
 
 // "My own products": the template's own categories (they become the shop's
 // menu), products, prices and photos
+// How many of its own products and categories a Studio template can bring
+export const MAX_SAMPLE_PRODUCTS = 60
+export const MAX_SAMPLE_CATEGORIES = 20
+
 export function cleanSamples(input) {
   const s = input && typeof input === 'object' ? input : {}
   const line = (v, max) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ').slice(0, max) : '')
   const slug = (v) => v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
   const categories = []
-  for (const c of Array.isArray(s.categories) ? s.categories.slice(0, 8) : []) {
+  for (const c of Array.isArray(s.categories) ? s.categories.slice(0, MAX_SAMPLE_CATEGORIES) : []) {
     const label = line(c?.label, 30)
     const name = slug(label)
     if (label && name && !categories.some((x) => x.name === name)) categories.push({ name, label })
   }
   if (!categories.length) throw new TemplateError('Add at least one category (it becomes the shop menu)')
   const products = []
-  for (const p of Array.isArray(s.products) ? s.products.slice(0, 12) : []) {
+  for (const p of Array.isArray(s.products) ? s.products.slice(0, MAX_SAMPLE_PRODUCTS) : []) {
     const name = line(p?.name, 60)
     if (!name) continue
     if (products.some((x) => x.name === name)) throw new TemplateError(`Two products are called "${name}"`)
@@ -184,7 +202,7 @@ let loadedAt = 0
 const MAX_AGE = 60 * 1000
 
 export async function refreshTemplates() {
-  const all = await StudioTemplate.find({}).select('key label bestFor description status recipe sampleSet pictures builtIn samples visibility allowedEmails').lean()
+  const all = await StudioTemplate.find({}).select('key label bestFor description status recipe sampleSet pictures builtIn samples visibility allowedEmails content').lean()
   cache = new Map(all.filter((t) => !t.builtIn).map((t) => [t.key, t]))
   edits = new Map(all.filter((t) => t.builtIn && t.status === 'published').map((t) => [t.builtIn, t]))
   loadedAt = Date.now()
@@ -233,6 +251,12 @@ export const samplesFor = (id) => {
   return t?.sampleSet === 'custom' ? t.samples || null : null
 }
 // Real photos for new shops (null = drawn pictures)
+// The homepage a new shop starts with (utils/templateContent.js)
+export const contentFor = (id) => {
+  const t = isBuiltIn(id) ? edits.get(id) : studio(id)
+  return t?.content || BUILTIN_CONTENT[isBuiltIn(id) ? id : t?.sampleSet] || BUILTIN_CONTENT.classic
+}
+export const hasOwnContent = (id) => Boolean((isBuiltIn(id) ? edits.get(id) : studio(id))?.content)
 export const picturesFor = (id) => (isBuiltIn(id) ? edits.get(id)?.pictures : studio(id)?.pictures) || null
 
 // For the gallery: new published templates, plus edited built-ins (builtIn set)

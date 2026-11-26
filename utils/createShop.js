@@ -4,7 +4,8 @@ import Category from '../models/Category.js'
 import HeroSlide from '../models/HeroSlide.js'
 import { getStoreSettings } from '../controllers/settingsController.js'
 import { sampleContent } from './sampleData.js'
-import { freshTemplates, isSelectableTemplate, sampleSetFor, picturesFor, samplesFor } from './templates.js'
+import { freshTemplates, isSelectableTemplate, isKnownTemplate, sampleSetFor, picturesFor, samplesFor, contentFor, hasOwnContent } from './templates.js'
+import { contentForShop } from './templateContent.js'
 import { trialDays } from './plans.js'
 import { forgetStore } from '../middleware/storeMiddleware.js'
 
@@ -67,7 +68,8 @@ export async function createShop({ owner, name, slug, template = 'classic', plan
   const problem = isDemo ? '' : slugProblem(cleanSlug)
   if (problem) throw new ShopError(problem)
   await freshTemplates()
-  if (!isSelectableTemplate(template)) throw new ShopError('Unknown template')
+  // A demo can wear a template still being made in the Studio (its preview shop)
+  if (!(isSelectableTemplate(template) || (isDemo && isKnownTemplate(template)))) throw new ShopError('Unknown template')
 
   const now = new Date()
   let store
@@ -100,7 +102,19 @@ export async function createShop({ owner, name, slug, template = 'classic', plan
       }
       for (const category of content.categories) await Category.create({ ...category, store: store._id })
       for (const product of content.products) await Product.create({ ...product, store: store._id })
-      await HeroSlide.create({ ...content.slide, store: store._id })
+      // The template's own homepage and banner words
+      const own = contentForShop(contentFor(template), shopName, content.picture, content.categories.map((c) => c.name))
+      settings.homeSections = own.homeSections
+      settings.markModified?.('homeSections')
+      // The "My own products" banner words stay unless the template set its own
+      const hero = !hasOwnContent(template) && samplesFor(template)?.heading ? {} : own.hero
+      await HeroSlide.create({
+        ...content.slide,
+        ...(hero.heading ? { heading: hero.heading } : {}),
+        ...(hero.text ? { text: hero.text } : {}),
+        ...(hero.buttonLabel ? { buttonLabel: hero.buttonLabel, buttonLink: hero.buttonLink || '/shop' } : {}),
+        store: store._id,
+      })
     }
     // Starting from one of the merchant's own saved templates
     if (design) {
