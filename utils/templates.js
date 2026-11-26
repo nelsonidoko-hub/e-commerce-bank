@@ -19,6 +19,21 @@ export const PARTS = {
   columns: [2, 3, 4, 5],
   footer: ['dark', 'light'],
   hero: ['full', 'compact', 'slim', 'split', 'none'],
+  // The rest of the shop (frontend utils/themes.js LAYOUT_CHOICES)
+  rows: ['grid', 'slider', 'spotlight', 'shelf'],
+  categories: ['none', 'tiles', 'circles', 'chips', 'banners'],
+  quotes: ['cards', 'single', 'plain'],
+  product: ['classic', 'wide', 'sticky', 'simple'],
+  listing: ['standard', 'sidebar', 'chips', 'large'],
+  density: ['compact', 'normal', 'airy'],
+}
+const STRUCTURE_LABELS = {
+  rows: 'product row style',
+  categories: 'category strip',
+  quotes: 'reviews style',
+  product: 'product page',
+  listing: 'shop page layout',
+  density: 'spacing',
 }
 // Which starter products a new shop gets (the built-in sets in sampleData.js)
 export const SAMPLE_SETS = {
@@ -78,8 +93,19 @@ export function cleanRecipe(input) {
       // (frontend storefront/parts.js). Unknown ids show the standard one.
       nav: partId(l.nav, 'standard'),
       home: partId(l.home, 'sections'),
+      // Left out when not given: the storefront then uses the built-in's own
+      // structure (an edited built-in) or the standard one
+      ...structure(l, one),
     },
   }
+}
+function structure(l, one) {
+  const out = {}
+  for (const [key, label] of Object.entries(STRUCTURE_LABELS)) {
+    if (l[key] !== undefined && l[key] !== null && l[key] !== '') out[key] = one(l[key], PARTS[key], label)
+  }
+  for (const key of ['bands', 'dividers']) if (typeof l[key] === 'boolean') out[key] = l[key]
+  return out
 }
 const partId = (value, fallback) => {
   if (value === undefined || value === null || value === '') return fallback

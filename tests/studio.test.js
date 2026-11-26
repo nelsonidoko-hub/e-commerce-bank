@@ -256,6 +256,21 @@ await check('page structure: menu and homepage parts (pack ids allowed), banner 
   assert.equal(await bad({ home: 'Has Spaces' }), 400)
   assert.equal(await bad({ hero: 'video-wall' }), 400)
 })
+await check('the rest of the shop: rows, categories, reviews, product page, shop pages, spacing; left out when not given', async () => {
+  const layout = { ...recipe.layout, rows: 'shelf', categories: 'circles', quotes: 'single', product: 'sticky', listing: 'sidebar', density: 'compact', bands: true, dividers: false }
+  const r = await studio(SC.createStudio, founderTok, { body: { ...luxe, key: 'round-two', label: 'Round two', recipe: { ...recipe, layout } } })
+  assert.equal(r.statusCode, 201, JSON.stringify(r.body))
+  const l = r.body.recipe.layout
+  assert.deepEqual([l.rows, l.categories, l.quotes, l.product, l.listing, l.density, l.bands, l.dividers], ['shelf', 'circles', 'single', 'sticky', 'sidebar', 'compact', true, false])
+  const plain = await studio(SC.createStudio, founderTok, { body: { ...luxe, key: 'round-two-plain', label: 'Plain', recipe } })
+  assert.equal(plain.statusCode, 201)
+  for (const k of ['rows', 'categories', 'quotes', 'product', 'listing', 'density', 'bands', 'dividers']) assert.equal(k in plain.body.recipe.layout, false, k)
+  const bad = async (extra) => (await studio(SC.createStudio, founderTok, { body: { ...luxe, key: 'bad-round-two', recipe: { ...recipe, layout: { ...recipe.layout, ...extra } } } })).statusCode
+  assert.equal(await bad({ rows: 'carousel3d' }), 400)
+  assert.equal(await bad({ product: '<b>' }), 400)
+  assert.equal(await bad({ listing: 'masonry' }), 400)
+  assert.equal(await bad({ density: 7 }), 400)
+})
 await check('Gadget and Atelier are built-in templates with electronics and fashion products', async () => {
   const g = await signup('gadgetshop', 'Gadget Shop', 'gadget')
   assert.equal((await Settings.findOne({ store: g.shop._id })).theme.template, 'gadget')
