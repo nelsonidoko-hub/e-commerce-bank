@@ -7,7 +7,7 @@ import { SAMPLE_PRODUCT_NAMES } from './sampleData.js'
 // Lookups here are instant (kept in memory) and refreshed whenever the Studio
 // changes something, and at least every minute.
 
-export const BUILTIN_TEMPLATES = ['classic', 'minimal', 'bold', 'fresh', 'catalog', 'glow', 'tech', 'playful', 'gadget', 'atelier']
+export const BUILTIN_TEMPLATES = ['classic', 'minimal', 'bold', 'fresh', 'catalog', 'glow', 'tech', 'playful', 'gadget', 'atelier', 'furnish', 'bloom']
 
 // The parts a recipe is made of. These must match frontend utils/themes.js.
 export const PARTS = {
@@ -46,6 +46,8 @@ export const SAMPLE_SETS = {
   glow: 'Beauty and skincare',
   tech: 'Phones and gadgets',
   playful: 'Babies and kids',
+  furnish: 'Furniture and home decor',
+  bloom: 'Sneakers',
   custom: 'My own products (type them in)',
 }
 

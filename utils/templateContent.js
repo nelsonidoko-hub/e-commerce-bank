@@ -169,6 +169,35 @@ export const BUILTIN_CONTENT = {
       ]),
     ],
   },
+  // The Furnish homepage (frontend packs/furnish) shows the first product
+  // row as its collection slider and the first review over a photo
+  furnish: {
+    hero: { heading: 'Furniture that feels like home', text: 'Comfortable, well made pieces for every room.', buttonLabel: 'Shop now', buttonLink: '/shop' },
+    homeSections: [
+      HERO,
+      products('collection', 'Our favourite collection', 'newest', { subtitle: 'Pieces for how we live today, where home and work share the same rooms.', count: 9 }),
+      quotes('reviews', 'What our customers say', [
+        ['The sofa is even more comfortable than it looked. Delivery was quick and careful.', 'Bola, Lagos'],
+        ['Solid, beautiful pieces. Our living room finally feels finished.', 'Emeka, Abuja'],
+      ]),
+      fromCategory('chairs', 'Chairs', 'chairs', { layout: 'carousel' }),
+      fromCategory('sofas', 'Sofas', 'sofas'),
+      words('delivery', 'Delivery and setup', 'We deliver within Lagos and Abuja and set your furniture up for you.'),
+      whatsapp('chat', 'Need help choosing?', 'Send us a photo of your space and we will suggest pieces that fit.'),
+    ],
+  },
+  // The Bloom homepage (frontend packs/bloom) shows the first text section as
+  // a big headline, then a clean product grid
+  bloom: {
+    hero: { heading: 'Step into style', text: 'Comfort, design and performance in every pair.', buttonLabel: 'Shop now', buttonLink: '/shop' },
+    homeSections: [
+      HERO,
+      words('intro', 'Step into style', 'Discover our latest sneakers: comfort, design and performance in every pair.'),
+      products('all', 'Latest pairs', 'newest', { count: 9 }),
+      fromCategory('running', 'Running', 'running', { layout: 'carousel' }),
+      whatsapp('chat', 'Not sure about your size?', 'Message us and we will help you pick the right fit.'),
+    ],
+  },
 }
 
 const line = (value, max) => (typeof value === 'string' ? value.replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, max) : '')

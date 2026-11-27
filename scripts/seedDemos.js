@@ -33,6 +33,8 @@ const NAMES = {
   playful: 'Little Ones Demo',
   gadget: 'Gadget Hub Demo',
   atelier: 'Atelier Demo',
+  furnish: 'Furnish Home Demo',
+  bloom: 'Bloom Sneakers Demo',
 }
 
 // (Re)builds one template's demo shop, demo-<template>, from scratch

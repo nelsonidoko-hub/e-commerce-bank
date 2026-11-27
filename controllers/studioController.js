@@ -2,7 +2,7 @@ import StudioTemplate from '../models/StudioTemplate.js'
 import Settings from '../models/Settings.js'
 import Store from '../models/Store.js'
 import { cleanKey, cleanRecipe, cleanPictures, cleanSamples, cleanEmails, refreshTemplates, TemplateError, SAMPLE_SETS, PARTS, BUILTIN_TEMPLATES } from '../utils/templates.js'
-import { SAMPLE_PRODUCT_NAMES, SAMPLE_CATEGORIES } from '../utils/sampleData.js'
+import { SAMPLE_PRODUCT_NAMES, SAMPLE_CATEGORIES, SAMPLE_PRODUCTS } from '../utils/sampleData.js'
 import { BUILTIN_CONTENT, cleanContent } from '../utils/templateContent.js'
 import { SectionError } from '../utils/sections.js'
 import Product from '../models/Product.js'
@@ -96,6 +96,7 @@ export const studioOptions = async (req, res) => {
     sampleSets: SAMPLE_SETS,
     sampleProducts: SAMPLE_PRODUCT_NAMES,
     sampleCategories: SAMPLE_CATEGORIES,
+    sampleSetProducts: SAMPLE_PRODUCTS,
     builtIn: BUILTIN_TEMPLATES,
     builtInContent: BUILTIN_CONTENT,
     demoSlugs: demos.map((d) => d.slug),

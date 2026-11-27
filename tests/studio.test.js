@@ -241,7 +241,8 @@ await check('seed-demos also rebuilds demos for published Studio templates', asy
   await studio(SC.setStudioStatus, founderTok, { params: { id: luxeId }, body: { status: 'published' } })
   const made = await seedDemos({ email: 'founder@shopsy.ng', password: '', log: () => {} })
   assert.ok(made.some((s) => s.slug === 'demo-luxe'))
-  assert.equal(made.length, 11)
+  assert.equal(made.length, 13, 'the 12 built-ins (with Furnish and Bloom) and the published Studio template')
+  assert.ok(made.some((s) => s.slug === 'demo-furnish') && made.some((s) => s.slug === 'demo-bloom'))
 })
 
 await check('page structure: menu and homepage parts (pack ids allowed), banner split/none; bad ids refused', async () => {
@@ -550,6 +551,10 @@ await check('the Studio gets every built-in homepage, the sample categories, and
   const o = (await studio(SC.studioOptions, founderTok)).body
   assert.equal(o.builtInContent.fresh.hero.buttonLabel, 'Order now')
   assert.deepEqual(o.sampleCategories.fresh.map((c) => c.name), ['meals', 'drinks', 'small-chops'])
+  const party = o.sampleSetProducts.fresh.find((x) => x.name === 'Party Jollof Rice')
+  assert.equal(party.category, 'Meals', 'categories by their label, as "My own products" uses them')
+  assert.ok(party.price > 0 && party.description)
+  assert.equal(o.sampleSetProducts.catalog.length, 10)
   assert.ok(o.demoSlugs.includes('demo-classic') && o.demoSlugs.includes('demo-tech'))
 })
 await check('a template with its own products gets a preview shop while being made; deleting removes it', async () => {

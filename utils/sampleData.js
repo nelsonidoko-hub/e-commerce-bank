@@ -12,7 +12,11 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 // frontend utils/pictureIcons.js.
 export const PICTURE_ICONS = [
   [/backpack|school bag/i, '🎒'],
-  [/sneaker|shoe|slides|sandal/i, '👟'],
+  [/sneaker|shoe|slides|sandal|runner|court 90s|volt edge|zenith flow|street vibe|nova horizon|pulse react|street retro|aeroflex|street pro/i, '👟'],
+  [/sofa|couch/i, '🛋️'],
+  [/chair|stool/i, '🪑'],
+  [/vase/i, '🏺'],
+  [/coffee table|side table/i, '🪵'],
   [/sun hat|straw hat/i, '👒'],
   [/cap\b|hat\b/i, '🧢'],
   [/dress|gown/i, '👗'],
@@ -197,6 +201,41 @@ const SETS = {
 }
 
 // Gadget and Atelier start with the same products as Tech and Minimal
+// Furnish (furniture) and Bloom (sneakers): adapted from MIT-licensed designs
+SETS.furnish = {
+  colours: ['#e7d7c1', '#8a6a4b'],
+  categories: [['chairs', 'Chairs'], ['sofas', 'Sofas'], ['tables', 'Tables'], ['lighting-decor', 'Lighting & decor']],
+  row: 'chairs',
+  products: [
+    ['Modern Lounge Chair', 59000, 'chairs', one(6), 'Curved oak frame with a soft woven seat.', { bestSeller: true }],
+    ['Comfy Home-Office Sofa', 245000, 'sofas', one(3), 'Deep seats and firm cushions for long workdays.', { bestSeller: true }],
+    ['Arc Floor Lamp', 48000, 'lighting-decor', one(10), 'Warm light that reaches right over your sofa.'],
+    ['High Back Office Chair', 85000, 'chairs', one(5), 'Tall back, padded arms and smooth wheels.'],
+    ['Royal Comfort Sofa', 320000, 'sofas', one(2), 'Hand-finished, button-tufted three-seater.'],
+    ['Glass Coffee Table', 95000, 'tables', one(4), 'Tempered glass top on a solid wood base.'],
+    ['Wooden Side Table', 35000, 'tables', one(8), 'Small, sturdy and just the right height.'],
+    ['Metal Wall Clock', 18000, 'lighting-decor', one(12), 'Brushed metal with silent hands.'],
+    ['Ceramic Table Vase', 12000, 'lighting-decor', one(15), 'Matte glaze, made by hand.'],
+  ],
+}
+const shoeSizes = (stock = 3) => ['40', '41', '42', '43', '44'].map((size) => ({ size, stock }))
+SETS.bloom = {
+  colours: ['#fde68a', '#d97706'],
+  categories: [['running', 'Running'], ['lifestyle', 'Lifestyle'], ['retro', 'Retro']],
+  row: 'running',
+  products: [
+    ['AirFlex Runner', 45000, 'running', shoeSizes(), 'Lightweight runners built for speed and comfort.'],
+    ['Urban Street Pro', 52000, 'lifestyle', shoeSizes(), 'Minimal everyday sneakers in premium leather.', { bestSeller: true }],
+    ['Classic Court 90s', 39000, 'retro', shoeSizes(), 'Retro tennis-court style, comfortable all day.'],
+    ['Volt Edge', 62000, 'running', shoeSizes(), 'Bold details and responsive cushioning.'],
+    ['Zenith Flow', 68000, 'lifestyle', shoeSizes(), 'Soft knit upper with a modern sole.'],
+    ['Street Vibe Low', 35000, 'lifestyle', shoeSizes(), 'A timeless low-top that goes with everything.'],
+    ['Nova Horizon', 58000, 'lifestyle', shoeSizes(), 'High-top in suede and mesh.'],
+    ['Pulse React', 52000, 'running', shoeSizes(), 'Springy cushioning for training and the gym.', { bestSeller: true }],
+    ['Core Street Retro', 44000, 'retro', shoeSizes(), 'Old-school basketball style, built to last.'],
+  ],
+}
+
 SETS.gadget = SETS.tech
 SETS.atelier = SETS.minimal
 
@@ -205,6 +244,14 @@ export const SAMPLE_TEMPLATES = Object.keys(SETS)
 // Each set's categories as { name, label } (the Studio's homepage editor offers them)
 export const SAMPLE_CATEGORIES = Object.fromEntries(Object.entries(SETS).map(([id, set]) => [id, set.categories.map(([name, label]) => ({ name, label }))]))
 export const SAMPLE_PRODUCT_NAMES = Object.fromEntries(Object.entries(SETS).map(([id, set]) => [id, set.products.map(([name]) => name)]))
+// Each set's products in full, so the Studio can copy a whole set into
+// "My own products" and the designer only adds to it
+export const SAMPLE_PRODUCTS = Object.fromEntries(
+  Object.entries(SETS).map(([id, set]) => {
+    const labels = Object.fromEntries(set.categories.map(([name, label]) => [name, label]))
+    return [id, set.products.map(([name, price, category, , description]) => ({ name, price, category: labels[category] || category, description: description || '' }))]
+  })
+)
 
 // Everything needed to fill a new shop: categories, products, a banner slide
 // and homepage pictures. Plain data; createShop.js saves it.

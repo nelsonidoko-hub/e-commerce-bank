@@ -187,6 +187,21 @@ What happens with it:
 - **Your template can bring up to 60 products and 20 categories** under "My own products" (it was 12 and 8). Add a photo for each one in the Photos section.
 - **Builder → Design** now has **"Use this template's homepage"**. A merchant who switches template can also take its homepage. It goes into their draft first, and nothing changes for customers until they publish.
 
+## 2i. Templates imported from outside: Furnish and Bloom
+
+Two free templates from ThemeWagon were rebuilt as built-in templates. Their code and design are MIT-licensed, so we may adapt and sell them; the credit is kept at the top of each pack file.
+
+| Template | From | What's special | Code |
+|---|---|---|---|
+| **Furnish** | Furnish by CodesCandy (Bootstrap) | A slider of your best pieces with big thin headings and italic sale tags, a "favourite collection" slider, a customer review over a large photo, square corners, Poppins | `storefront/packs/furnish` |
+| **Bloom** | BloomShop by Bloomtpl (Next.js) | No banner: a big centred headline, a search bar in the menu, rounded cards with full-width buttons | `storefront/packs/bloom` |
+
+Each has its own sample products (furniture: 9; sneakers: 9), its own homepage and a demo shop (`demo-furnish`, `demo-bloom`) after `npm run seed-demos`.
+
+**Photos were not copied.** Furnish's photos have no clear licence, and Bloom's are Unsplash pictures of branded shoes. To give them real photos, open the template in the Studio (Edit) → Details → Photos and upload pictures you have the rights to.
+
+**To bring in another outside template:** check its licence first (MIT or similar, or a licence you bought that allows reselling). Then send the zip and ask for it to be turned into a pack, as these two were.
+
 ## 3. Ideas: new templates from existing parts
 
 | Template | Start from | Change |
